@@ -33,7 +33,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         tokenStore = TokenStore(applicationContext)
-        localApi = DopplerLocalApi(tokenStore.savedIpAddress, tokenStore.savedPort)
+        localApi = DopplerLocalApi(
+            host = tokenStore.savedIpAddress,
+            port = tokenStore.savedPort,
+            dsn = tokenStore.savedDsn ?: "Doppler-00000000",
+            localKey = tokenStore.authToken ?: ""
+        )
         repository = DopplerRepository(localApi)
         viewModel = DopplerViewModel(repository)
 

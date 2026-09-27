@@ -16,7 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sandman.doppler.model.DopplerColor
-import com.sandman.doppler.model.LightBarEffect
+import com.sandman.doppler.model.DopplerDisplayDots
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
 
@@ -131,7 +131,12 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         Button(
                             onClick = {
                                 viewModel.triggerLightBar(
-                                    LightBarEffect(mode = "pulse", duration = 15, speed = 50, color = DopplerColor.CYAN)
+                                    DopplerDisplayDots(
+                                        colors = listOf(listOf(0, 220, 255)),
+                                        duration = 15,
+                                        speed = 50,
+                                        attributes = mapOf("display" to "pulse")
+                                    )
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Slate800),
@@ -143,7 +148,12 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         Button(
                             onClick = {
                                 viewModel.triggerLightBar(
-                                    LightBarEffect(mode = "comet", duration = 15, speed = 40, color = DopplerColor.AMBER, direction = "right")
+                                    DopplerDisplayDots(
+                                        colors = listOf(listOf(255, 150, 0)),
+                                        duration = 15,
+                                        speed = 40,
+                                        attributes = mapOf("display" to "comet")
+                                    )
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Slate800),
@@ -160,7 +170,11 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         Button(
                             onClick = {
                                 viewModel.triggerLightBar(
-                                    LightBarEffect(mode = "pulse", duration = 20, rainbow = true)
+                                    DopplerDisplayDots(
+                                        duration = 20,
+                                        speed = 50,
+                                        attributes = mapOf("display" to "rainbow")
+                                    )
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Slate800),
@@ -170,7 +184,15 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         }
 
                         Button(
-                            onClick = { viewModel.stopLightBar() },
+                            onClick = {
+                                viewModel.triggerLightBar(
+                                    DopplerDisplayDots(
+                                        colors = listOf(listOf(0, 0, 0)),
+                                        duration = 0,
+                                        attributes = mapOf("display" to "off")
+                                    )
+                                )
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Slate800),
                             modifier = Modifier.weight(1f)
                         ) {

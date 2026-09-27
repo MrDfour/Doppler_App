@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,7 +24,7 @@ import com.sandman.doppler.viewmodel.DopplerViewModel
 @Composable
 fun AlarmsScreen(viewModel: DopplerViewModel) {
     val state by viewModel.deviceState.collectAsState()
-    val alarms = state?.alarms?.values?.toList() ?: emptyList()
+    val alarms = state?.alarms ?: emptyList()
 
     LazyColumn(
         modifier = Modifier
@@ -53,7 +54,7 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
             items(alarms) { alarm ->
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (alarm.isRinging) Rose500.copy(alpha = 0.2f) else Slate900
+                        containerColor = if (alarm.status == 1) Slate900 else Slate900.copy(alpha = 0.5f)
                     ),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -67,20 +68,29 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
                     ) {
                         Column {
                             Text(
-                                text = alarm.time,
-                                color = Color.White,
+                                text = alarm.timeFormatted,
+                                color = if (alarm.isEnabled) Color.White else Slate400,
                                 fontSize = 32.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             )
+                            val title = if (alarm.isSystemAlarm) "Doppler System Alarm" else alarm.name.ifBlank { "User Alarm #${alarm.id}" }
                             Text(
-                                text = "${alarm.name} • ${alarm.sound}",
+                                text = "$title • ${alarm.sound} • ${alarm.repeat.ifBlank { "Once" }}",
                                 color = Slate400,
                                 fontSize = 12.sp
                             )
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            IconButton(onClick = { viewModel.playAlarmSound(alarm.sound) }) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Preview Sound",
+                                    tint = Cyan400
+                                )
+                            }
+
                             Switch(
                                 checked = alarm.isEnabled,
                                 onCheckedChange = { viewModel.toggleAlarm(alarm) },
@@ -92,7 +102,7 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
                                 )
                             )
 
-                            if (alarm.id != 0) {
+                            if (!alarm.isSystemAlarm) {
                                 IconButton(onClick = { viewModel.deleteAlarm(alarm.id) }) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,

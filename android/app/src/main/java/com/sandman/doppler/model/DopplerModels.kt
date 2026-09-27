@@ -1,5 +1,6 @@
 package com.sandman.doppler.model
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -9,11 +10,13 @@ data class DopplerColor(
     val b: Int = 255
 ) {
     init {
-        require(r in 0..255) { "Red component must be 0..255" }
-        require(g in 0..255) { "Green component must be 0..255" }
-        require(b in 0..255) { "Blue component must be 0..255" }
+        require(r in 0..255) { "Red component must be 0..255 (got $r)" }
+        require(g in 0..255) { "Green component must be 0..255 (got $g)" }
+        require(b in 0..255) { "Blue component must be 0..255 (got $b)" }
     }
 
+    fun toList(): List<Int> = listOf(r, g, b)
+    fun toColorObject(): DopplerColorObject = DopplerColorObject(red = r, green = g, blue = b)
     fun toHex(): String = String.format("#%02X%02X%02X", r, g, b)
 
     companion object {
@@ -23,9 +26,16 @@ data class DopplerColor(
         val EMERALD = DopplerColor(16, 220, 120)
         val PURPLE = DopplerColor(180, 60, 255)
 
+        fun fromList(list: List<Int>): DopplerColor {
+            val red = list.getOrNull(0)?.coerceIn(0, 255) ?: 0
+            val green = list.getOrNull(1)?.coerceIn(0, 255) ?: 0
+            val blue = list.getOrNull(2)?.coerceIn(0, 255) ?: 0
+            return DopplerColor(red, green, blue)
+        }
+
         fun fromHex(hex: String): DopplerColor {
             val clean = hex.removePrefix("#")
-            val num = clean.toLong(16).toInt()
+            val num = clean.toLongOrNull(16)?.toInt() ?: 0
             return DopplerColor(
                 r = (num shr 16) and 0xFF,
                 g = (num shr 8) and 0xFF,
@@ -36,100 +46,242 @@ data class DopplerColor(
 }
 
 @Serializable
-enum class AlarmStatus {
-    SET,
-    UNARMED,
-    SNOOZED,
-    ACTIVE
+data class DopplerColorObject(
+    val red: Int = 0,
+    val green: Int = 220,
+    val blue: Int = 255
+) {
+    fun toDopplerColor(): DopplerColor = DopplerColor(red.coerceIn(0, 255), green.coerceIn(0, 255), blue.coerceIn(0, 255))
 }
+
+@Serializable
+data class DopplerColorPayload(
+    val color: List<Int>
+)
+
+@Serializable
+data class DopplerDeviceInfo(
+    val mfgrName: String? = null,
+    val modelNum: String? = null,
+    val serialNum: String? = null,
+    val firmware: String? = null,
+    val hardware: String? = null,
+    val software: String? = null
+)
+
+@Serializable
+data class DopplerWifiStatus(
+    val uptime: Long = 0L,
+    val ssid: String = "",
+    val str: Int = 0
+)
+
+@Serializable
+data class DopplerUtcTime(
+    val hour: Int = 0,
+    val min: Int = 0
+)
+
+@Serializable
+data class DopplerTimeMode(
+    val timeMode: Int = 12 // 12 or 24
+)
+
+@Serializable
+data class DopplerTimezone(
+    val timezone: String = "America/Los_Angeles"
+)
+
+@Serializable
+data class DopplerTimeOffset(
+    val offset: Int = 0
+)
+
+@Serializable
+data class DopplerUseColon(
+    val on: Boolean = true
+)
+
+@Serializable
+data class DopplerColonBlink(
+    val blink: Boolean = true
+)
+
+@Serializable
+data class DopplerUseLeadingZero(
+    val useLeadingZero: Boolean = false
+)
+
+@Serializable
+data class DopplerFadeTime(
+    val fadeTime: Boolean = true
+)
+
+@Serializable
+data class DopplerDisplaySeconds(
+    val displaySeconds: Boolean = false
+)
+
+@Serializable
+data class DopplerVolume(
+    val volume: Int = 75
+)
+
+@Serializable
+data class DopplerSoundPreset(
+    val soundPreset: String = "Flat"
+)
+
+@Serializable
+data class DopplerSoundPresetMode(
+    val soundPresetMode: String = "auto"
+)
+
+@Serializable
+data class DopplerAscending(
+    val ascending: Boolean = true
+)
+
+@Serializable
+data class DopplerLightSensor(
+    val lightSensor: Int = 0
+)
+
+@Serializable
+data class DopplerDayMode(
+    val dayMode: Boolean = true
+)
+
+@Serializable
+data class DopplerHighToLowTransition(
+    val highToLowTransition: Int = 35
+)
+
+@Serializable
+data class DopplerLowToHighTransition(
+    val lowToHighTransition: Int = 45
+)
+
+@Serializable
+data class DopplerBrightness(
+    val brightness: Int = 80
+)
+
+@Serializable
+data class DopplerSync(
+    val sync: Boolean = true
+)
 
 @Serializable
 data class DopplerAlarm(
     val id: Int,
-    val name: String,
-    val time: String, // "HH:MM"
-    val repeat: List<String> = emptyList(), // "Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"
-    val color: DopplerColor = DopplerColor.AMBER,
-    val volume: Int = 75,
-    val status: String = "set", // "set", "unarmed", "snoozed", "active"
-    val sound: String = "Sandman.mp3"
+    val name: String = "",
+    val time_hr: Int = 7,
+    val time_min: Int = 0,
+    val repeat: String = "", // e.g. "MoTuWeThFr"
+    val color: DopplerColorObject? = null,
+    val volume: Int = 80,
+    val status: Int = 1, // 1 = enabled, 0 = disabled
+    val sound: String = "Gentle.mp3",
+    val src: Int = 1 // 1 = user, 0 = system
 ) {
-    val isEnabled: Boolean get() = status == "set" || status == "active" || status == "snoozed"
-    val isRinging: Boolean get() = status == "active"
+    val isEnabled: Boolean get() = status == 1
+    val isSystemAlarm: Boolean get() = id == 0
+    val timeFormatted: String get() = String.format("%02d:%02d", time_hr, time_min)
+
+    val repeatDaysList: List<String>
+        get() {
+            if (repeat.isBlank()) return emptyList()
+            val days = mutableListOf<String>()
+            var idx = 0
+            while (idx + 2 <= repeat.length) {
+                days.add(repeat.substring(idx, idx + 2))
+                idx += 2
+            }
+            return days
+        }
 }
 
 @Serializable
-enum class LightBarMode {
-    OFF,
-    SET,
-    SET_EACH,
-    BLINK,
-    PULSE,
-    COMET,
-    SWEEP,
-    RAINBOW
-}
-
-@Serializable
-data class LightBarEffect(
-    val mode: String = "pulse",
-    val color: DopplerColor? = null,
-    val colors: List<DopplerColor>? = null,
-    val rainbow: Boolean = false,
-    val speed: Int = 50,
-    val duration: Int = 15,
-    val sparkle: String? = null, // "low", "medium", "high"
-    val gap: Int? = null,
-    val size: Int? = null,
-    val direction: String? = null // "left", "right", "bounce"
+data class DopplerAlarmsResponse(
+    val alarms: List<DopplerAlarm> = emptyList()
 )
 
 @Serializable
-data class DisplayTextRequest(
+data class DopplerAlarmSoundsResponse(
+    val sounds: List<String> = emptyList()
+)
+
+@Serializable
+data class DopplerPlaySoundRequest(
+    val sound: String
+)
+
+@Serializable
+data class DopplerDisplayText(
     val text: String,
     val duration: Int = 10,
     val speed: Int = 50,
-    val color: DopplerColor = DopplerColor.CYAN
+    val color: List<Int> = listOf(0, 220, 255)
 )
 
 @Serializable
-data class MiniDisplayNumberRequest(
-    val number: Int,
+data class DopplerSmallDigits(
+    val num: Int,
     val duration: Int = 15,
-    val color: DopplerColor = DopplerColor.AMBER
+    val color: List<Int> = listOf(255, 150, 0)
 )
 
+@Serializable
+data class DopplerDisplayDots(
+    val colors: List<List<Int>>? = null,
+    val duration: Int = 15,
+    val speed: Int = 50,
+    val attributes: Map<String, String>? = null
+)
+
+@Serializable
+data class DopplerWeather(
+    val wsonoff: Boolean = false,
+    val location: String = "",
+    val wsmode: Int = 1
+)
+
+@Serializable
+data class DopplerWeatherWakeupTime(
+    val weatherwakeuptime: String = "06:00"
+)
+
+@Serializable
+data class DopplerAlexaTone(
+    val tone: Boolean = true
+)
+
+/**
+ * Unified Immutable UI State consumed by Jetpack Compose screens.
+ * Aggregates all live Doppler clock hardware readings and user preferences.
+ */
 @Serializable
 data class DopplerDeviceState(
-    val id: String = "doppler-radar-01",
-    val dsn: String = "Doppler-deadbeef",
+    val dsn: String = "Doppler-00000000",
     val name: String = "Sandman Doppler",
-    val ipAddress: String = "192.168.1.142",
-    val firmwareVersion: String = "1.4.12",
-    val softwareVersion: String = "2.1.0",
-    val modelNumber: String = "PAI-DOPPLER-01",
+    val ipAddress: String = "192.168.1.100",
+    val port: Int = 5443,
+    val online: Boolean = false,
+    val lastSyncTimestampMs: Long = 0L,
+
+    // Hardware metadata
     val manufacturer: String = "Palo Alto Innovation",
-    val online: Boolean = true,
-    val uptimeSeconds: Long = 86420,
-    val wifiSsid: String = "Home_WiFi",
-    val wifiRssi: Int = -58,
-    val alexaLoggedIn: Boolean = true,
+    val modelNumber: String = "SandmanDopplerProduction",
+    val firmwareVersion: String = "Unknown",
+    val softwareVersion: String = "Unknown",
+    val uptimeSeconds: Long = 0L,
+    val wifiSsid: String = "",
+    val wifiRssi: Int = 0,
 
-    val dayDisplayColor: DopplerColor = DopplerColor.CYAN,
-    val dayDisplayBrightness: Int = 85,
-    val nightDisplayColor: DopplerColor = DopplerColor.DEEP_RED,
-    val nightDisplayBrightness: Int = 25,
-    val dayButtonColor: DopplerColor = DopplerColor.CYAN,
-    val dayButtonBrightness: Int = 80,
-    val nightButtonColor: DopplerColor = DopplerColor.DEEP_RED,
-    val nightButtonBrightness: Int = 20,
-    val smartButtonColor: DopplerColor = DopplerColor.EMERALD,
-
-    val ambientLightSensorLux: Int = 145,
-    val isNightMode: Boolean = false,
-    val dayToNightThreshold: Int = 35,
-    val nightToDayThreshold: Int = 45,
-
+    // Time & Formatting
+    val currentUtcHour: Int = 12,
+    val currentUtcMin: Int = 0,
     val time24Hour: Boolean = false,
     val leadingZero24Hour: Boolean = false,
     val colonBlink: Boolean = true,
@@ -137,17 +289,42 @@ data class DopplerDeviceState(
     val displaySecondsOnMini: Boolean = false,
     val fadeTimeMode: Boolean = true,
     val timezone: String = "America/Los_Angeles",
+    val timeOffsetMinutes: Int = 0,
 
-    val masterVolume: Int = 65,
+    // Audio & Equalizer
+    val masterVolume: Int = 75,
     val soundPreset: String = "Flat",
-    val volumeDependentEq: Boolean = true,
+    val soundPresetMode: String = "auto",
     val ascendingAlarms: Boolean = true,
-    val alexaTapToTalkTone: Boolean = true,
-    val alexaWakeWordTone: Boolean = true,
 
-    val weatherLocation: String = "94301, USA",
-    val currentTemperatureF: Int = 72,
+    // Ambient Sensor & Mode
+    val ambientLightSensorLux: Int = 100,
+    val isNightMode: Boolean = false,
+    val dayToNightThreshold: Int = 35,
+    val nightToDayThreshold: Int = 45,
 
-    val lightBarEffect: LightBarEffect? = null,
-    val alarms: Map<Int, DopplerAlarm> = emptyMap()
+    // Brightness & Colors
+    val dayDisplayBrightness: Int = 85,
+    val nightDisplayBrightness: Int = 25,
+    val dayButtonBrightness: Int = 80,
+    val nightButtonBrightness: Int = 20,
+    val dayDisplayColor: DopplerColor = DopplerColor.CYAN,
+    val nightDisplayColor: DopplerColor = DopplerColor.DEEP_RED,
+    val dayButtonColor: DopplerColor = DopplerColor.CYAN,
+    val nightButtonColor: DopplerColor = DopplerColor.DEEP_RED,
+
+    // Sync Flags
+    val syncButtonDisplayBrightness: Boolean = true,
+    val syncHighLowColor: Boolean = false,
+    val syncButtonDisplayColor: Boolean = true,
+
+    // Alarms
+    val alarms: List<DopplerAlarm> = emptyList(),
+    val availableSounds: List<String> = emptyList(),
+
+    // Weather
+    val weatherEnabled: Boolean = false,
+    val weatherLocation: String = "",
+    val weatherWakeupTime: String = "06:00",
+    val currentTemperatureF: Int = 72
 )
