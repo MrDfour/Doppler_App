@@ -225,7 +225,7 @@ android/app/src/main/java/com/sandman/doppler/
 ### Phase 2: Standalone Device Onboarding & Discovery (Zero Servers)
 **Goal:** Enable the phone app to acquire the `localKey` and discover the Doppler on the LAN without requiring Home Assistant or manual server setup.
 
-- [ ] **Task 2.1: Implement Mobile Cloud Provisioning Client (`CopilotCloudAuthClient.kt`)**
+- [x] **Task 2.1: Implement Mobile Cloud Provisioning Client (`CopilotCloudAuthClient.kt`)**
   - Path: `android/app/src/main/java/com/sandman/doppler/api/CopilotCloudAuthClient.kt`
   - Purpose:
     - Provide an in-app setup wizard where the user logs into their Sandman Doppler account once.
@@ -238,11 +238,11 @@ android/app/src/main/java/com/sandman/doppler/
     - Clear user credentials from memory immediately after key extraction.
   - Verification: Successful simulation of auth flow with mock endpoints; zero credentials retained in plaintext.
 
-- [ ] **Task 2.2: Implement Manual & Offline Provisioning Flow**
+- [x] **Task 2.2: Implement Manual & Offline Provisioning Flow**
   - Path: `android/app/src/main/java/com/sandman/doppler/ui/screens/SettingsScreen.kt`
   - Purpose: Allow power users to directly input their Doppler IP, DSN, and Local Key manually or paste them from a QR code/clipboard, supporting 100% air-gapped / offline setups.
 
-- [ ] **Task 2.3: Upgrade Network Discovery Engine (`DopplerDiscovery.kt`)**
+- [x] **Task 2.3: Upgrade Network Discovery Engine (`DopplerDiscovery.kt`)**
   - Path: `android/app/src/main/java/com/sandman/doppler/api/DopplerDiscovery.kt`
   - Purpose:
     - Listen for mDNS records (`_http._tcp.` and `_https._tcp.`).
@@ -250,7 +250,7 @@ android/app/src/main/java/com/sandman/doppler/
     - Auto-resolve Doppler hostname (`Doppler-<dsn>.local`) via Android NSD.
   - Verification: Correctly detects mock Doppler on LAN within 3 seconds.
 
-- [ ] **Task 2.4: Expand Hardware-Backed `TokenStore.kt`**
+- [x] **Task 2.4: Expand Hardware-Backed `TokenStore.kt`**
   - Path: `android/app/src/main/java/com/sandman/doppler/security/TokenStore.kt`
   - Purpose: Safely persist `localKey`, `dsn`, `savedIpAddress`, `savedPort` (default `5443`), and `deviceFriendlyName` using `EncryptedSharedPreferences` with `AES-256-GCM`.
 

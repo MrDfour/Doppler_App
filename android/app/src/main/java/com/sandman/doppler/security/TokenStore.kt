@@ -33,7 +33,7 @@ class TokenStore(context: Context) {
         set(value) = prefs.edit().putString(KEY_IP, value).apply()
 
     var savedPort: Int
-        get() = prefs.getInt(KEY_PORT, 3000)
+        get() = prefs.getInt(KEY_PORT, 5443) // Default is 5443 for authentic HTTPS Local API
         set(value) = prefs.edit().putInt(KEY_PORT, value).apply()
 
     var authToken: String?
@@ -44,6 +44,36 @@ class TokenStore(context: Context) {
         get() = prefs.getString(KEY_DSN, null)
         set(value) = prefs.edit().putString(KEY_DSN, value).apply()
 
+    var deviceFriendlyName: String?
+        get() = prefs.getString(KEY_FRIENDLY_NAME, null)
+        set(value) = prefs.edit().putString(KEY_FRIENDLY_NAME, value).apply()
+
+    /**
+     * Alias for authToken — provides semantic clarity when storing/reading the Doppler local key.
+     * The localKey is the cryptographic secret used for SHA-256 token derivation.
+     */
+    var localKey: String?
+        get() = authToken
+        set(value) { authToken = value }
+
+    /**
+     * Quick check: Is the device minimally configured for local communication?
+     * Requires at least a DSN and localKey to derive authentication tokens.
+     */
+    val isConfigured: Boolean
+        get() = !savedDsn.isNullOrBlank() && !authToken.isNullOrBlank()
+
+    /**
+     * Full validation: Is the device fully configured with all fields needed for connection?
+     * Checks DSN, localKey, and a non-default IP address.
+     */
+    fun hasValidConfig(): Boolean {
+        return isConfigured &&
+            savedIpAddress.isNotBlank() &&
+            savedIpAddress != "0.0.0.0" &&
+            savedPort in 1..65535
+    }
+
     fun clearCredentials() {
         prefs.edit().clear().apply()
     }
@@ -53,5 +83,6 @@ class TokenStore(context: Context) {
         private const val KEY_PORT = "doppler_port"
         private const val KEY_TOKEN = "doppler_auth_token"
         private const val KEY_DSN = "doppler_dsn"
+        private const val KEY_FRIENDLY_NAME = "doppler_friendly_name"
     }
 }

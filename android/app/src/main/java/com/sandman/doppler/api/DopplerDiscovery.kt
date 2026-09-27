@@ -5,16 +5,15 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import android.text.format.Formatter
-import com.sandman.doppler.model.DopplerDeviceState
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.net.InetAddress
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 data class DiscoveredDoppler(
     val name: String,
@@ -25,8 +24,11 @@ data class DiscoveredDoppler(
 
 /**
  * Handles device discovery on the local network through two mechanisms:
- * 1. Network Service Discovery (mDNS / DNS-SD via Android NsdManager)
- * 2. Active subnet probing (scanning local Wi-Fi subnet /24 on port 3000/80)
+ * 1. Network Service Discovery (mDNS / DNS-SD via Android NsdManager) for both `_http._tcp.` and `_https._tcp.`
+ * 2. Active parallel subnet sweep specifically probing HTTPS port 5443 for oatpp server responses
+ *
+ * Designed for the Sandman Doppler clock's embedded web server which uses self-signed TLS
+ * certificates on port 5443.
  */
 class DopplerDiscovery(private val context: Context) {
 
@@ -34,20 +36,49 @@ class DopplerDiscovery(private val context: Context) {
     private val _discoveredDevices = MutableStateFlow<List<DiscoveredDoppler>>(emptyList())
     val discoveredDevices: StateFlow<List<DiscoveredDoppler>> = _discoveredDevices.asStateFlow()
 
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(800, TimeUnit.MILLISECONDS)
-        .readTimeout(800, TimeUnit.MILLISECONDS)
-        .build()
+    private val _scanProgress = MutableStateFlow(0f) // 0.0 to 1.0
+    val scanProgress: StateFlow<Float> = _scanProgress.asStateFlow()
 
-    private var discoveryListener: NsdManager.DiscoveryListener? = null
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    private val scanClient: OkHttpClient by lazy {
+        LanTrustManager.createOkHttpClientBuilder()
+            .connectTimeout(800, TimeUnit.MILLISECONDS)
+            .readTimeout(800, TimeUnit.MILLISECONDS)
+            .build()
+    }
+
+    private var discoveryListenerHttp: NsdManager.DiscoveryListener? = null
+    private var discoveryListenerHttps: NsdManager.DiscoveryListener? = null
+    private var scanJob: Job? = null
 
     /**
-     * Start mDNS discovery for Doppler services (_doppler._tcp or _http._tcp)
+     * Start mDNS discovery for Doppler services on both `_http._tcp.` and `_https._tcp.`
      */
-    fun startMdnsDiscovery(serviceType: String = "_http._tcp.") {
+    fun startMdnsDiscovery() {
         stopMdnsDiscovery()
 
-        discoveryListener = object : NsdManager.DiscoveryListener {
+        discoveryListenerHttp = createDiscoveryListener()
+        discoveryListenerHttps = createDiscoveryListener()
+
+        try {
+            nsdManager.discoverServices("_http._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListenerHttp)
+        } catch (e: Exception) {
+            // Fallback or ignore if discovery service is unavailable
+        }
+
+        try {
+            nsdManager.discoverServices("_https._tcp.", NsdManager.PROTOCOL_DNS_SD, discoveryListenerHttps)
+        } catch (e: Exception) {
+            // Fallback or ignore if discovery service is unavailable
+        }
+    }
+
+    private fun createDiscoveryListener(): NsdManager.DiscoveryListener {
+        return object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(regType: String) {}
 
             override fun onServiceFound(serviceInfo: NsdServiceInfo) {
@@ -62,10 +93,14 @@ class DopplerDiscovery(private val context: Context) {
                             val port = resolvedInfo.port
                             val name = resolvedInfo.serviceName
 
+                            // Try to extract DSN from service name (e.g. "Doppler-12345678")
+                            val extractedDsn = extractDsnFromName(name)
+
                             val device = DiscoveredDoppler(
                                 name = name,
                                 host = host,
-                                port = port
+                                port = port,
+                                dsn = extractedDsn
                             )
                             addDiscoveredDevice(device)
                         }
@@ -80,70 +115,143 @@ class DopplerDiscovery(private val context: Context) {
             }
 
             override fun onDiscoveryStopped(serviceType: String) {}
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                stopMdnsDiscovery()
-            }
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {}
             override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
-        }
-
-        try {
-            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
-        } catch (e: Exception) {
-            // Fallback or ignore if discovery service is unavailable
         }
     }
 
     fun stopMdnsDiscovery() {
-        discoveryListener?.let {
-            try {
-                nsdManager.stopServiceDiscovery(it)
-            } catch (e: Exception) {}
-            discoveryListener = null
+        discoveryListenerHttp?.let {
+            try { nsdManager.stopServiceDiscovery(it) } catch (e: Exception) {}
+            discoveryListenerHttp = null
+        }
+        discoveryListenerHttps?.let {
+            try { nsdManager.stopServiceDiscovery(it) } catch (e: Exception) {}
+            discoveryListenerHttps = null
         }
     }
 
     /**
-     * Active subnet probing: scans the current /24 Wi-Fi subnet for responsive Doppler HTTP endpoints
+     * Cancel an ongoing subnet scan.
      */
-    suspend fun probeSubnet(port: Int = 3000): List<DiscoveredDoppler> = withContext(Dispatchers.IO) {
+    fun cancelScan() {
+        scanJob?.cancel()
+        scanJob = null
+        _isScanning.value = false
+        _scanProgress.value = 0f
+    }
+
+    /**
+     * Active subnet probing: scans the current /24 Wi-Fi subnet for responsive
+     * Doppler HTTPS port 5443 endpoints using parallel coroutine chunks.
+     *
+     * Probes hosts in parallel batches of [concurrency] to balance speed vs. network load.
+     * Automatically extracts DSN by probing the device info endpoint on successful connections.
+     *
+     * @param port The port to scan (default 5443 for Doppler HTTPS).
+     * @param concurrency Number of parallel probes per batch (default 16).
+     */
+    suspend fun probeSubnet(
+        port: Int = 5443,
+        concurrency: Int = 16
+    ): List<DiscoveredDoppler> = withContext(Dispatchers.IO) {
+        _isScanning.value = true
+        _scanProgress.value = 0f
+
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val ipAddressInt = wifiManager.connectionInfo.ipAddress
-        if (ipAddressInt == 0) return@withContext emptyList()
+        if (ipAddressInt == 0) {
+            _isScanning.value = false
+            return@withContext emptyList()
+        }
 
         @Suppress("DEPRECATION")
         val ipString = Formatter.formatIpAddress(ipAddressInt)
         val subnetPrefix = ipString.substringBeforeLast(".")
 
         val foundList = mutableListOf<DiscoveredDoppler>()
+        val scannedCount = AtomicInteger(0)
+        val totalHosts = 253 // 1..254 minus self
 
-        // Probe hosts in parallel chunks across the subnet
-        for (i in 1..254) {
-            val candidateIp = "$subnetPrefix.$i"
-            if (candidateIp == ipString) continue // skip self
+        // Build candidate list (excluding own IP)
+        val candidates = (1..254).map { "$subnetPrefix.$it" }.filter { it != ipString }
 
-            try {
-                val request = Request.Builder()
-                    .url("http://$candidateIp:$port/api/devices")
-                    .get()
-                    .build()
+        // Process in parallel chunks
+        scanJob = coroutineContext[Job]
+        candidates.chunked(concurrency).forEach { chunk ->
+            if (!isActive) return@withContext foundList.toList()
 
-                httpClient.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val device = DiscoveredDoppler(
-                            name = "Doppler ($candidateIp)",
-                            host = candidateIp,
-                            port = port
-                        )
-                        foundList.add(device)
-                        addDiscoveredDevice(device)
-                    }
+            val deferredResults = chunk.map { candidateIp ->
+                async {
+                    probeSingleHost(candidateIp, port)
                 }
-            } catch (e: Exception) {
-                // Host unreachable or not a Doppler; continue scan
+            }
+
+            deferredResults.forEach { deferred ->
+                val device = deferred.await()
+                if (device != null) {
+                    foundList.add(device)
+                    addDiscoveredDevice(device)
+                }
+                val progress = scannedCount.incrementAndGet().toFloat() / totalHosts
+                _scanProgress.value = progress.coerceIn(0f, 1f)
             }
         }
 
+        _isScanning.value = false
+        _scanProgress.value = 1f
         return@withContext foundList
+    }
+
+    /**
+     * Probes a single host:port for a Doppler clock.
+     * Returns a [DiscoveredDoppler] if the host responds like an oatpp server, null otherwise.
+     */
+    private fun probeSingleHost(candidateIp: String, port: Int): DiscoveredDoppler? {
+        return try {
+            // First, try to connect and get any response (even 401 proves it's an oatpp server)
+            val request = Request.Builder()
+                .url("https://$candidateIp:$port/device")
+                .get()
+                .build()
+
+            scanClient.newCall(request).execute().use { response ->
+                // Even 401 Unauthorized (missing token) proves it's a Doppler
+                if (response.code == 200 || response.code == 401 || response.code == 403) {
+                    // Try to extract DSN from response body if 200
+                    var dsn: String? = null
+                    if (response.code == 200) {
+                        try {
+                            val body = response.body?.string()
+                            if (body != null) {
+                                val info = json.decodeFromString<DsnProbeResponse>(body)
+                                dsn = info.serialNum
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    DiscoveredDoppler(
+                        name = if (dsn != null) "Sandman Doppler ($dsn)" else "Sandman Doppler ($candidateIp)",
+                        host = candidateIp,
+                        port = port,
+                        dsn = dsn
+                    )
+                } else {
+                    null
+                }
+            }
+        } catch (e: Exception) {
+            // Host unreachable or not a Doppler; continue scan
+            null
+        }
+    }
+
+    /**
+     * Extract DSN from mDNS service name (e.g. "Doppler-12345678" → "Doppler-12345678")
+     */
+    private fun extractDsnFromName(serviceName: String): String? {
+        val dopplerPattern = Regex("(Doppler-[A-Za-z0-9]+)", RegexOption.IGNORE_CASE)
+        return dopplerPattern.find(serviceName)?.value
     }
 
     private fun addDiscoveredDevice(device: DiscoveredDoppler) {
@@ -153,4 +261,20 @@ class DopplerDiscovery(private val context: Context) {
             _discoveredDevices.value = current
         }
     }
+
+    /**
+     * Clear all discovered devices (e.g. before starting a fresh scan).
+     */
+    fun clearDiscoveredDevices() {
+        _discoveredDevices.value = emptyList()
+    }
 }
+
+/**
+ * Minimal response model for DSN extraction during subnet scanning.
+ */
+@kotlinx.serialization.Serializable
+private data class DsnProbeResponse(
+    val serialNum: String? = null,
+    val mfgrName: String? = null
+)

@@ -86,4 +86,12 @@ object LanTrustManager {
             .sslSocketFactory(sslSocketFactory, lanTrustManager)
             .hostnameVerifier(lanHostnameVerifier)
     }
+
+    /**
+     * Creates a new OkHttpClient.Builder pre-configured with LAN TLS trust.
+     * Convenience factory for discovery, scanning, and other LAN callers.
+     */
+    fun createOkHttpClientBuilder(): OkHttpClient.Builder {
+        return configureLanTls(OkHttpClient.Builder())
+    }
 }
