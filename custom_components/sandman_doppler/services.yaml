@@ -1,0 +1,754 @@
+set_weather_location:
+  name: Set weather location
+  description: Sets the location that weather is retrieved for. To control other weather settings, use the available weather entities.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    location:
+      name: Location
+      description: The location to query weather for.
+      required: true
+      selector:
+        text:
+
+add_alarm:
+  name: Add new alarm
+  description: Creates an Alarm on the Doppler. If the ID is unused, the alarm will use that ID. If the ID is in use, the new alarm will use the first available ID.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    id:
+      name: Alarm ID
+      description: ID of the alarm to be set
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: box
+    name:
+      name: Alarm Name
+      description: Name of the alarm
+      required: true
+      selector:
+        text:          
+    time:
+      name: Alarm Time
+      description: The time of the alarm to set
+      required: true
+      selector:
+        time:
+    repeat:
+      name: Repeat Days
+      description: Alarm repeats on these days
+      required: false
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Sunday
+              value: Su
+            - label: Monday
+              value: Mo
+            - label: Tuesday
+              value: Tu
+            - label: Wednesday
+              value: We
+            - label: Thursday
+              value: Th
+            - label: Friday
+              value: Fr
+            - label: Saturday
+              value: Sa
+    color:
+      name: Alarm Color
+      description: Color of the alarm on the clock
+      required: true
+      selector:
+        color_rgb:
+    volume:
+      name: Alarm Volume
+      description: Volume for alarm separate from master volume
+      required: true
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    status:
+      name: Alarm Enabled?
+      description: Whether alarm is enabled or disabled
+      required: true
+      selector:
+        select:
+          options:
+            - Enabled
+            - Disabled
+    sound:
+      name: Alarm Sound
+      description: MP3 file to play for alarm
+      required: true
+      selector:
+        select:
+          options:
+            - '1980.mp3'
+            - 'Alarming.mp3'
+            - 'Classic.mp3'
+            - 'Dance.mp3'
+            - 'Dialup.mp3'
+            - 'Gentle.mp3'
+            - 'Harp.mp3'
+            - 'Jazz.mp3'
+            - 'Jungle.mp3'
+            - 'Playful.mp3'
+            - 'Purite.mp3'
+            - 'Rainforest.mp3'
+            - 'Ripples.mp3'
+            - 'Rooster.mp3'
+            - 'Sandman.mp3'
+            - 'Stream.mp3'
+            - 'Sub.mp3'
+            - 'Trek.mp3'
+            - 'Violin.mp3'
+            - 'Waves.mp3'
+
+update_alarm:
+  name: Update existing alarm
+  description: Updates an existing Alarm on the Doppler. If there is no alarm using the provided ID, the call will fail.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    id:
+      name: Alarm ID
+      description: ID of the alarm to be set
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: box
+    name:
+      name: Alarm Name
+      description: Name of the alarm
+      required: false
+      selector:
+        text:          
+    time:
+      name: Alarm Time
+      description: The time of the alarm to set
+      required: false
+      selector:
+        time:
+    repeat:
+      name: Repeat Days
+      description: Alarm repeats on these days
+      required: false
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Sunday
+              value: Su
+            - label: Monday
+              value: Mo
+            - label: Tuesday
+              value: Tu
+            - label: Wednesday
+              value: We
+            - label: Thursday
+              value: Th
+            - label: Friday
+              value: Fr
+            - label: Saturday
+              value: Sa
+    color:
+      name: Alarm Color
+      description: Color of the alarm on the clock
+      required: false
+      selector:
+        color_rgb:
+    volume:
+      name: Alarm Volume
+      description: Volume for alarm separate from master volume
+      required: false
+      advanced: true
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    status:
+      name: Alarm Status
+      description: Enable, disable, or snooze alarm
+      required: false
+      selector:
+        select:
+          options:
+            - Enabled
+            - Disabled
+            - Snoozed
+    sound:
+      name: Alarm Sound
+      description: MP3 file to play for alarm
+      required: false
+      selector:
+        select:
+          options:
+            - '1980.mp3'
+            - 'Alarming.mp3'
+            - 'Classic.mp3'
+            - 'Dance.mp3'
+            - 'Dialup.mp3'
+            - 'Gentle.mp3'
+            - 'Harp.mp3'
+            - 'Jazz.mp3'
+            - 'Jungle.mp3'
+            - 'Playful.mp3'
+            - 'Purite.mp3'
+            - 'Rainforest.mp3'
+            - 'Ripples.mp3'
+            - 'Rooster.mp3'
+            - 'Sandman.mp3'
+            - 'Stream.mp3'
+            - 'Sub.mp3'
+            - 'Trek.mp3'
+            - 'Violin.mp3'
+            - 'Waves.mp3'
+
+delete_alarm:
+  name: Delete Alarm
+  description: Deletes the selected Alarm
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    id:
+      name: Alarm ID
+      description: ID of the alarm to be deleted
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: box
+
+set_main_display_text:
+  name: Set main display text
+  description: Display text on main display
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    text:
+      name: Text
+      description: Text to display
+      required: true
+      selector:
+        text:
+          type: text
+    duration:
+      name: Duration
+      description: Length of time text is displayed in seconds
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Number of characters to display over duration
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 10000
+          mode: box
+    color:
+      name: Color
+      description: Color of displayed text
+      required: true
+      selector:
+        color_rgb:
+
+set_mini_display_number:
+  name: Set mini display number
+  description: Display a number on the mini display
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    number:
+      name: Number
+      description: Number to display on Mini Display
+      required: true
+      selector:
+        number:
+          min: -199
+          max: 199
+          mode: box
+    duration:
+      name: Display Duration
+      description: Length of time in seconds the number is displayed on mini display
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    color:
+      name: Display Color
+      description: Color of Displayed Number
+      required: true
+      selector:
+        color_rgb:
+
+activate_light_bar_set:
+  name: Activate the light bar (`set`)
+  description: Activates the light bar in `set` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Speed of light bar effect
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+
+activate_light_bar_set_each:
+  name: Activate the light bar (`set-each`)
+  description: Activates the light bar in `set-each` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+
+activate_light_bar_blink:
+  name: Activate the light bar (`blink`)
+  description: Activates the light bar in `blink` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Speed of light bar effect
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+
+activate_light_bar_pulse:
+  name: Activate the light bar (`pulse`)
+  description: Activates the light bar in `pulse` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Speed of light bar effect
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+    gap:
+      name: Gap
+      description: Number of color slices between colors
+      required: false
+      selector:
+        number:
+          min: 2
+          max: 255
+          mode: box
+
+activate_light_bar_comet:
+  name: Activate the light bar (`comet`)
+  description: Activates the light bar in `comet` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Speed of light bar effect
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+    size:
+      name: Size
+      description: Size of comet
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    direction:
+      name: Direction
+      description: Direction of comet
+      required: false
+      selector:
+        select:
+          options:
+            - right
+            - left
+            - bounce
+
+activate_light_bar_sweep:
+  name: Activate the light bar (`sweep`)
+  description: Activates the light bar in `sweep` mode.
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    color:
+      name: Single Color
+      description: Use this option to select a single color. If this is enabled, don't set rainbow to `true`. If color list is enabled, this will be ignored.
+      required: false
+      selector:
+        color_rgb:
+    colors:
+      name: Color List
+      description: List of colors where each color is in the form [red_val, green_val, blue_val]. You can use the Single Color color picker to pick a color visually and then switch to YAML mode and copy the result into this box. Repeat for each color you want to add to the list. If this is enabled, don't set rainbow to `true`.
+      required: false
+      selector:
+        object:
+    rainbow:
+      name: Rainbow
+      description: Uses rainbow effect for color. If this is `true` don't specify color list.
+      required: false
+      selector:
+        boolean:
+    duration:
+      name: Duration
+      description: Duration of light bar effect
+      required: true
+      selector:
+        duration:
+          enable_day: false
+    speed:
+      name: Speed
+      description: Speed of light bar effect
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    sparkle:
+      name: Sparkle
+      description: Makes sparkles in the effect
+      required: false
+      selector:
+        select:
+          options:
+            - low
+            - medium
+            - high
+    gap:
+      name: Gap
+      description: Number of dots per block that are black
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    size:
+      name: Size
+      description: Number of dots per block that are colored
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    direction:
+      name: Direction
+      description: Direction of sweep
+      required: false
+      selector:
+        select:
+          options:
+            - right
+            - left
+            - bounce
+set_rainbow_mode:
+  name: Put the clock in rainbow mode
+  description: Puts the clock in rainbow mode
+  fields:
+    device_id:
+      name: Device
+      description: The Sandman Doppler device to target
+      required: true
+      selector:
+        device:
+          integration: sandman_doppler
+          multiple: true
+    speed:
+      name: "Speed"
+      description: "Speed of effect (lower number is faster) or 0 to turn off"
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    mode:
+      name: "Day/Night/Both"
+      description: "Whether the clock displays rainbow mode for day, night, or both"
+      required: true
+      selector:
+        select:
+          options:
+            - day 
+            - night
+            - both

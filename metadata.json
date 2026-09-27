@@ -1,0 +1,8 @@
+{
+  "name": "Sandman Doppler Integration & Device Controller",
+  "description": "Complete Home Assistant integration and device management suite for the Sandman Doppler smart alarm clock, featuring real-time lightbar effects, alarm automation, sensor telemetry, and smart button triggers.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

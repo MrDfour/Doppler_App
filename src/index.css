@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    background-color: #020617;
+    color: #f8fafc;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+.font-mono-digital {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.font-clock {
+  font-family: 'Chakra Petch', 'JetBrains Mono', monospace;
+}
