@@ -496,23 +496,28 @@ private fun CloudLoginTab(
                         val loginRes = client.login(email, password)
                         if (loginRes.isSuccess) {
                             val token = loginRes.getOrNull()!!
+                            // Persist the cloud token immediately so the app can fall back
+                            // to the cloud control plane even when the LAN daemon (localkey) is unavailable.
+                            tokenStore.cloudAccessToken = token
+                            tokenStore.savedDsn = thing.dsn
+                            tokenStore.deviceFriendlyName = thing.name ?: "Sandman Doppler"
                             val keyRes = client.fetchLocalKey(thing.dsn, token)
                             if (keyRes.isSuccess) {
                                 val keyData = keyRes.getOrNull()!!
-                                tokenStore.savedDsn = thing.dsn
                                 tokenStore.authToken = keyData.localKey
                                 if (!keyData.ipAddie.isNullOrEmpty()) {
                                     tokenStore.savedIpAddress = keyData.ipAddie
                                 }
                                 // Real local port comes from the cloud localkey response (default 5443)
                                 tokenStore.savedPort = keyData.port ?: 5443
-                                tokenStore.deviceFriendlyName = thing.name ?: "Sandman Doppler"
-                                onStateUpdate(false, null, "Successfully provisioned ${thing.dsn}!", fetchedThings)
-                                onReconnect()
+                                onStateUpdate(false, null, "Successfully provisioned ${thing.dsn}! (LAN + Cloud)", fetchedThings)
                             } else {
                                 val reason = keyRes.exceptionOrNull()?.message ?: "unknown error"
-                                onStateUpdate(false, "Failed to retrieve localKey for ${thing.dsn}: $reason", null, fetchedThings)
+                                // Cloud control still works even though the LAN daemon is unavailable.
+                                tokenStore.savedPort = 5443
+                                onStateUpdate(false, null, "Provisioned ${thing.dsn} via Cloud (LAN unavailable: $reason)", fetchedThings)
                             }
+                            onReconnect()
                         } else {
                             val reason = loginRes.exceptionOrNull()?.message ?: "unknown error"
                             onStateUpdate(false, "Re-authentication failed: $reason", null, fetchedThings)

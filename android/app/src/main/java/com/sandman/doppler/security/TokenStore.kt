@@ -48,6 +48,11 @@ class TokenStore(context: Context) {
         get() = prefs.getString(KEY_FRIENDLY_NAME, null)
         set(value) = prefs.edit().putString(KEY_FRIENDLY_NAME, value).apply()
 
+    /** Cached Copilot cloud access token — enables cloud control fallback when the LAN daemon is unavailable. */
+    var cloudAccessToken: String?
+        get() = prefs.getString(KEY_CLOUD_TOKEN, null)
+        set(value) = prefs.edit().putString(KEY_CLOUD_TOKEN, value).apply()
+
     /**
      * Alias for authToken — provides semantic clarity when storing/reading the Doppler local key.
      * The localKey is the cryptographic secret used for SHA-256 token derivation.
@@ -57,15 +62,14 @@ class TokenStore(context: Context) {
         set(value) { authToken = value }
 
     /**
-     * Quick check: Is the device minimally configured for local communication?
-     * Requires at least a DSN and localKey to derive authentication tokens.
+     * Quick check: Is the device minimally configured for communication?
+     * Requires a DSN plus either a localKey (LAN path) or a cloud access token (cloud fallback path).
      */
     val isConfigured: Boolean
-        get() = !savedDsn.isNullOrBlank() && !authToken.isNullOrBlank()
+        get() = !savedDsn.isNullOrBlank() && (!authToken.isNullOrBlank() || !cloudAccessToken.isNullOrBlank())
 
     /**
      * Full validation: Is the device fully configured with all fields needed for connection?
-     * Checks DSN, localKey, and a non-default IP address.
      */
     fun hasValidConfig(): Boolean {
         return isConfigured &&
@@ -84,5 +88,6 @@ class TokenStore(context: Context) {
         private const val KEY_TOKEN = "doppler_auth_token"
         private const val KEY_DSN = "doppler_dsn"
         private const val KEY_FRIENDLY_NAME = "doppler_friendly_name"
+        private const val KEY_CLOUD_TOKEN = "doppler_cloud_token"
     }
 }

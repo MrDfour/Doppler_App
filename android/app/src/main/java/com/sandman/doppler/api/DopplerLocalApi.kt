@@ -77,7 +77,7 @@ open class DopplerLocalApi(
      * Executes an authenticated request against `baseUrl/$dsn/$path`.
      * Automatically handles token derivation and refreshes token on HTTP 410 Gone / 401.
      */
-    suspend fun executeAuthenticatedRequest(
+    open suspend fun executeAuthenticatedRequest(
         method: String,
         path: String,
         jsonBody: String? = null,

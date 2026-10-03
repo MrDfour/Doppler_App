@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.repository.DopplerRepository
 import com.sandman.doppler.security.TokenStore
@@ -31,16 +32,30 @@ class MainActivity : ComponentActivity() {
     private lateinit var repository: DopplerRepository
     private lateinit var viewModel: DopplerViewModel
 
+    private fun buildApi(store: TokenStore): DopplerLocalApi {
+        val dsn = store.savedDsn ?: "Doppler-00000000"
+        return if (!store.cloudAccessToken.isNullOrBlank()) {
+            DopplerCloudApi(
+                dsn = dsn,
+                cloudAccessToken = store.cloudAccessToken!!
+            )
+        } else {
+            DopplerLocalApi(
+                host = store.savedIpAddress,
+                port = store.savedPort,
+                dsn = dsn,
+                localKey = store.authToken ?: ""
+            )
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         tokenStore = TokenStore(applicationContext)
-        localApi = DopplerLocalApi(
-            host = tokenStore.savedIpAddress,
-            port = tokenStore.savedPort,
-            dsn = tokenStore.savedDsn ?: "Doppler-00000000",
-            localKey = tokenStore.authToken ?: ""
-        )
+        // Prefer the cloud control plane when a Copilot cloud token is available;
+        // fall back to the raw LAN daemon otherwise (e.g. manual provisioning).
+        localApi = buildApi(tokenStore)
         repository = DopplerRepository(localApi)
         viewModel = DopplerViewModel(repository)
 
@@ -103,12 +118,7 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 tokenStore = tokenStore,
                                 onReconnect = {
-                                    localApi = DopplerLocalApi(
-                                        host = tokenStore.savedIpAddress,
-                                        port = tokenStore.savedPort,
-                                        dsn = tokenStore.savedDsn ?: "Doppler-00000000",
-                                        localKey = tokenStore.authToken ?: ""
-                                    )
+                                    localApi = buildApi(tokenStore)
                                     repository = DopplerRepository(localApi)
                                     viewModel = DopplerViewModel(repository)
                                 }
