@@ -54,12 +54,45 @@ data class CloudThingItem(
     val ipAddie: String? = null
 )
 
+// Shape of a single item in the real /v4/things response:
+// { "id": "...", "info": { "name", "firmware", "physicalId", "model" }, "status": ... }
 @Serializable
-data class CloudThingsResponse(val things: List<CloudThingItem> = emptyList())
+data class CloudThingInfo(
+    val name: String? = null,
+    val firmware: String? = null,
+    val physicalId: String? = null,
+    val model: String? = null
+)
+
+@Serializable
+data class CloudThingApiItem(
+    val id: String? = null,
+    val info: CloudThingInfo? = null,
+    // Older/alternate shapes may surface these fields directly
+    val dsn: String? = null,
+    val name: String? = null,
+    val modelNum: String? = null,
+    val firmware: String? = null,
+    val ipAddie: String? = null
+)
+
+@Serializable
+data class CloudThingsResponse(val things: List<CloudThingApiItem> = emptyList())
+
+private fun CloudThingApiItem.toThingItem(): CloudThingItem? {
+    val resolvedDsn = dsn ?: info?.physicalId ?: return null
+    return CloudThingItem(
+        dsn = resolvedDsn,
+        name = name ?: info?.name,
+        modelNum = modelNum ?: info?.model,
+        firmware = firmware ?: info?.firmware,
+        ipAddie = ipAddie
+    )
+}
 
 @Serializable
 data class CloudLocalKeyResponse(
-    val localKey: String,
+    @kotlinx.serialization.SerialName("localkey") val localKey: String,
     val ipAddie: String? = null
 )
 
@@ -166,13 +199,13 @@ class CopilotCloudAuthClient(
                 }
                 val bodyStr = response.body?.string()
                     ?: return@withContext Result.failure(IOException("Empty response"))
-                // Some APIs return list directly or wrapped in { things: [...] }
-                val things = try {
+                // Real API returns {"things": [...]}; some variants return a bare array
+                val rawItems = try {
                     json.decodeFromString<CloudThingsResponse>(bodyStr).things
                 } catch (e: Exception) {
-                    json.decodeFromString<List<CloudThingItem>>(bodyStr)
+                    json.decodeFromString<List<CloudThingApiItem>>(bodyStr)
                 }
-                Result.success(things)
+                Result.success(rawItems.mapNotNull { it.toThingItem() })
             }
         } catch (e: Exception) {
             Result.failure(e)
