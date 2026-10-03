@@ -60,7 +60,8 @@ class DopplerRepository(
                     hadError = true
                 }
 
-                // A poll cycle is the sum of 22 round-trips. Over the cloud relay that can
+                // A poll cycle is the sum of 25 round-trips (22 original + `software/weather`,
+                // `software/weather-wakeup-time`, `doptime/timezone`). Over the cloud relay that can
                 // exceed the interval, in which case a fixed delay leaves the poller running
                 // back-to-back with no idle gap - permanently occupying the request gate and
                 // inviting relay throttling. Yield at least as long as the cycle actually
@@ -136,6 +137,18 @@ class DopplerRepository(
             val dayToNight = try { localApi.getHighToLowTransition() } catch (e: Exception) { DopplerHighToLowTransition(35) }
             val nightToDay = try { localApi.getLowToHighTransition() } catch (e: Exception) { DopplerLowToHighTransition(45) }
 
+            // Query weather. Neither read is counted as an error, for two reasons.
+            // They answer in well under a second when the clock is reachable, but the
+            // cloud relay has been measured returning 408 for `software/weather` on one
+            // call and 200 on the next, and counting a flaky read would fail the whole
+            // cycle and mark a perfectly online clock offline.
+            // A null result therefore keeps the previously known values rather than
+            // falling back to model defaults - otherwise one dropped poll would present
+            // the weather as switched off at an empty location.
+            val weather = try { localApi.getWeather() } catch (e: Exception) { null }
+            val weatherWake = try { localApi.getWeatherWakeupTime() } catch (e: Exception) { null }
+            val clockTz = try { localApi.getTimezone() } catch (e: Exception) { null }
+
             // Query alarms
             val clockAlarms = try { localApi.getAlarms() } catch (e: Exception) { emptyList() }
             // Ground truth for which alarm ids actually exist on the clock. Must be taken
@@ -193,6 +206,11 @@ class DopplerRepository(
                 syncButtonDisplayColor = syncBtnDispColor.sync,
                 alarms = alarms,
                 availableSounds = sounds,
+                weatherEnabled = weather?.wsonoff ?: currentState.weatherEnabled,
+                weatherLocation = weather?.location ?: currentState.weatherLocation,
+                weatherMode = weather?.wsmode ?: currentState.weatherMode,
+                weatherWakeupTime = weatherWake?.weatherwakeuptime ?: currentState.weatherWakeupTime,
+                clockTimezone = clockTz?.timezone ?: currentState.clockTimezone,
                 // Published so the UI can say "this device does not support this" instead of
                 // rendering the model default that the failed read fell back to.
                 unavailableEndpoints = localApi.capabilities.unavailablePaths
@@ -210,6 +228,128 @@ class DopplerRepository(
             _deviceState.value = _deviceState.value?.copy(online = false)
         } finally {
             _isRefreshing.value = false
+        }
+    }
+
+    /**
+     * Writes one field of `software/weather`, rebuilding the whole payload from state.
+     *
+     * `setWeather` PUTs the entire object, so a partial write does not exist on the
+     * wire. Sending `DopplerWeather(location = ...)` with the model defaults would
+     * silently switch the weather off and drop the display back to Fahrenheit. Every
+     * weather mutation therefore rebuilds the payload from the last known values
+     * instead of from defaults.
+     */
+    private suspend fun writeWeather(
+        desired: DopplerWeather,
+        optimistic: (DopplerDeviceState) -> DopplerDeviceState
+    ) {
+        val previousState = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the weather before the device state has loaded")
+        applyOptimisticUpdate { state -> state?.let(optimistic) }
+        try {
+            localApi.setWeather(desired)
+            confirmHardware("software/weather") { raw ->
+                val confirmed = json.decodeFromString<DopplerWeather>(raw)
+                _deviceState.value = _deviceState.value?.copy(
+                    weatherEnabled = confirmed.wsonoff,
+                    weatherLocation = confirmed.location,
+                    weatherMode = confirmed.wsmode
+                )
+            }
+        } catch (e: Exception) {
+            _deviceState.value = previousState
+            throw e
+        }
+    }
+
+    suspend fun updateWeatherEnabled(enabled: Boolean) {
+        val prior = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the weather before the device state has loaded")
+        writeWeather(
+            desired = DopplerWeather(
+                wsonoff = enabled,
+                location = prior.weatherLocation,
+                wsmode = prior.weatherMode
+            ),
+            optimistic = { it.copy(weatherEnabled = enabled) }
+        )
+    }
+
+    /**
+     * Points the clock at [location].
+     *
+     * The caller is expected to pass coordinates produced by
+     * [com.sandman.doppler.model.formatCoordinate] from a resolved
+     * [com.sandman.doppler.model.PlaceCandidate] - never the user's raw text. The clock
+     * validates nothing, so a bare postal code sent here can be resolved against the
+     * wrong country in silence.
+     */
+    suspend fun updateWeatherLocation(location: String) {
+        val prior = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the weather before the device state has loaded")
+        writeWeather(
+            desired = DopplerWeather(
+                wsonoff = prior.weatherEnabled,
+                location = location,
+                wsmode = prior.weatherMode
+            ),
+            optimistic = { it.copy(weatherLocation = location) }
+        )
+    }
+
+    suspend fun updateWeatherMode(mode: Int) {
+        val prior = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the weather before the device state has loaded")
+        writeWeather(
+            desired = DopplerWeather(
+                wsonoff = prior.weatherEnabled,
+                location = prior.weatherLocation,
+                wsmode = mode
+            ),
+            optimistic = { it.copy(weatherMode = mode) }
+        )
+    }
+
+    /**
+     * Sets the time the clock announces a forecast.
+     *
+     * This is not the refresh interval and not a cache window: the clock updates its
+     * current weather and icon as soon as new data reaches it, and this time is when it
+     * *announces* the forecast, alarm-style.
+     */
+    suspend fun updateWeatherWakeupTime(time: String) {
+        val previousState = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the weather before the device state has loaded")
+        applyOptimisticUpdate { it?.copy(weatherWakeupTime = time) }
+        try {
+            localApi.setWeatherWakeupTime(time)
+            confirmHardware("software/weather-wakeup-time") { raw ->
+                _deviceState.value = _deviceState.value?.copy(
+                    weatherWakeupTime = json.decodeFromString<DopplerWeatherWakeupTime>(raw).weatherwakeuptime
+                )
+            }
+        } catch (e: Exception) {
+            _deviceState.value = previousState
+            throw e
+        }
+    }
+
+    /** Sets the clock's IANA timezone, e.g. `America/Chihuahua`. */
+    suspend fun updateClockTimezone(timezone: String) {
+        val previousState = _deviceState.value
+            ?: throw IllegalStateException("Cannot change the timezone before the device state has loaded")
+        applyOptimisticUpdate { it?.copy(clockTimezone = timezone) }
+        try {
+            localApi.setTimezone(timezone)
+            confirmHardware("doptime/timezone") { raw ->
+                _deviceState.value = _deviceState.value?.copy(
+                    clockTimezone = json.decodeFromString<DopplerTimezone>(raw).timezone
+                )
+            }
+        } catch (e: Exception) {
+            _deviceState.value = previousState
+            throw e
         }
     }
 

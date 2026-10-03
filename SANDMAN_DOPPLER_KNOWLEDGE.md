@@ -113,17 +113,92 @@ which endpoints are read-only.
 | all four `*-brightness` | `{"brightness":N}` | matches | ok |
 | all four `*-color` | `{"color":[r,g,b]}` | matches | ok |
 | all three `*-sync-*` | `{"sync":bool}` | matches | ok |
-| `software/weather` | `{"wsonoff":true,"location":"78852","wsmode":2}` | matches | ok |
+| `software/weather` | `{"wsonoff":true,"location":"78852","wsmode":2}` | matches | ok — see "Weather works outside the US" below |
 | `software/weather-wakeup-time` | `{"weatherwakeuptime":"10:00"}` | matches | ok |
 | `alexa/lwa-status` | `{"status":false,"timestamp":254}` | — | ok |
 | `alexa/tap-talk-tone` | `{"tone":true}` | — | ok |
 | `alexa/wake-word-tone` | `{"tone":true}` | — | ok |
 
+### Weather works outside the US — the official app's ZIP box is a UI limit
+
+Measured on `Doppler-10caaebb`. The clock was displaying weather for **78852 (Seguin, Texas)**,
+not the Mexican location it had been set to.
+
+**`location` is free-form passthrough. The clock validates nothing.** All four of
+`27.1258,-104.9118`, `33980`, `Jimenez, Chihuahua, Mexico` and `78852` were written and read
+back **byte-identically**. The value goes straight to weatherapi.com's `q` parameter, which
+accepts a city name, `lat,lon`, a US ZIP, a UK/Canada postal code, a METAR, an IATA code or an
+IP. weatherapi.com documents **no Mexican postal codes** — but it *does* accept coordinates, so
+the official app's ZIP-only input is a **UI restriction, not a protocol limit**.
+
+**Confirmed working:** `location="27.1258,-104.9118"`, `wsmode=2`, `wsonoff=true` → the clock
+displayed **20° and cloudy**, against Open-Meteo's 19.5 °C daily max / WMO 3 overcast for those
+coordinates. Previously Seguin: 26.6 °C, WMO 1 mainly clear. The icon changed too, so this is
+genuine data rather than a coincidence.
+
+> **The trap: postal codes are ambiguous and the clock will not warn you.** `33980` is both the
+> Mexican postal code for **Jiménez, Chihuahua** and a valid US ZIP for **Port Charlotte,
+> Florida**. Send the bare string and you get US weather *in silence* — wrong data, no error.
+> `33987` is in the same Florida `339xx` block. This is why the app resolves typed input to
+> coordinates before writing and never sends raw user text.
+
+**`wsmode` is three choices in one integer** — provider, statistic, unit — so the number alone
+means nothing. Mapping recovered from `doppyler` 0.0.20's `WeatherMode`, the Python client
+pinned by Palo Alto Innovation's own `ha-doppler` integration:
+
+| `wsmode` | Provider | Statistic / unit |
+| :--- | :--- | :--- |
+| 0 | — | off |
+| 1, 2 | weatherapi.com | daily high °F / **°C** |
+| 3, 7, 8 | weatherapi.com | daily humidity avg / min / max |
+| 4 | weatherapi.com | daily AQI |
+| 5, 6 | weatherapi.com | daily low °F / °C |
+| 9, 10 | weatherapi.com | hourly temperature °F / °C |
+| 11, 12 | weatherapi.com | hourly humidity / AQI |
+| 13, 14 | **US NWS** | daily forecast °F / °C |
+| 15, 16 | **US NWS** | hourly observation °F / °C |
+| 17 | **US NWS** | hourly humidity |
+
+Modes 1–12 **resolve worldwide**; 13–17 are **US-only** and cannot resolve a non-US location.
+Modes 2 and 14 are the same statistic and unit differing only in provider — so 14 in Mexico
+cannot work, while 2 can.
+
+**`weatherwakeuptime` is a forecast announcement alarm, not a refresh interval.** The clock
+updates its temperature and icon as soon as new data reaches it; this time is when it *speaks*
+the forecast (confirmed by the owner from direct observation of the official app). Consequence:
+a mode showing the **daily high** evaluated at 10:00 freezes a mid-morning value, so the wakeup
+time belongs in the evening.
+
+### The clock timezone was silently wrong
+
+The unit shipped set to `Canada/Saskatchewan`. Corrected to `America/Chihuahua` and read back
+successfully — and **the displayed time did not move at all**, because both zones are UTC−06:00
+with no DST. A correct clock face is therefore **not** evidence of a correct timezone. `doptime/offset`
+reported `0` throughout, which is unrelated to the zone.
+
+### Plain-text place lookup — provider split is load-bearing
+
+Typed place names and postal codes resolve through **two** providers, because one cannot do both:
+
+| Input | Provider | Why |
+| :--- | :--- | :--- |
+| Town / city name | **Open-Meteo geocoding** (`geocoding-api.open-meteo.com`) | free, no key, global, returns an IANA timezone |
+| Numeric (postal code) | **Nominatim** (OpenStreetMap) | Open-Meteo answers `33980` with *"Pola de Laviana, Spain"* and *"Audenge, France"* |
+
+Nominatim additionally returns **every country claiming the code** — unfiltered `33980` yields
+both *Jiménez, Chihuahua, México* and *Port Charlotte, Florida* as separate candidates, which is
+exactly the disambiguation a user needs. `countrycodes=mx` narrows it to the right one.
+
+Both return *all* candidates rather than guessing, because `"Jimenez"` alone matches **eight**
+places across Mexico, Spain, the Philippines and Costa Rica. Note Open-Meteo also returns two
+Jiménez entries for `Jimenez, Chihuahua, Mexico` — the **municipality centroid (28.333, −105.4)
+and the town (27.117, −104.95)**, ~135 km apart, so picking the wrong one gives wrong weather.
+
 **READS — 6 are permanently broken (HTTP 408, ~15s each, 2/2 retries):**
 `hardware/wifi-status`, `software/use-colon`, `software/colon-blink`,
 `software/use-leading-zero`, `software/use-fade-time`, `software/display-seconds`.
 
-These are 6 of the **22 endpoints in a poll cycle**, serialized through the request gate at
+These are 6 of the **25 endpoints in a poll cycle**, serialized through the request gate at
 ~15s apiece — roughly **90 seconds of dead time per poll**. This is almost certainly the
 dominant remaining latency term, and it is a *server-side* fault we cannot fix from the app.
 Note `software/use-colon` **accepts writes** (PUT → 200 in 406ms) while its GET always times
@@ -175,12 +250,12 @@ real problem, and both were invisible in the LAN path:
    fast and freeing the gate is strictly better than waiting it out.
 2. **Token-refresh storm on a dead refresh token.** The 401 branch called
    `refreshTokenProvider()` inline, per request, *inside the gate*. When the refresh token
-   is dead, every one of the 22 poll reads paid a failed refresh round-trip (itself
+   is dead, every one of the poll reads paid a failed refresh round-trip (itself
    30s-timeout) before retrying and failing again. Fixed with **fail-fast**: one failed
    refresh disables further attempts for the session, plus single-flight dedup.
    Note a *successful* refresh was never the problem — the token is written back and later
    requests are accepted, so only the failure path stormed.
-3. **Poll cycle longer than its own interval.** 22 sequential WAN round-trips exceed the
+3. **Poll cycle longer than its own interval.** 25 sequential WAN round-trips exceed the
    8s interval, so a fixed delay left the poller running back-to-back with no idle gap.
    `startPolling` now yields `max(interval, elapsed)` so the link always gets a breather.
 
@@ -258,8 +333,9 @@ All hardware commands go to `https://control.sandmandoppler.com/{dsn}/...`:
 | `/alarms` | GET/PUT/DELETE | Full CRUD |
 | `/alarms/sounds` | GET | 20 sound filenames |
 | `/alarms/sounds/play` | POST | Preview sound |
-| `/software/weather` | GET/PUT | Weather config |
-| `/software/weather-wakeup-time` | GET/PUT | Weather alarm lead time |
+| `/software/weather` | GET/PUT | Weather config. **`location` is free-form passthrough, never validated** — send coordinates, not a postal code. `PUT` replaces the **whole** object, so a partial write cannot exist |
+| `/software/weather-wakeup-time` | GET/PUT | Time the clock **announces** the forecast. Not a refresh interval |
+| `/doptime/timezone` | GET/PUT | IANA zone. **Was silently `Canada/Saskatchewan` on a Mexican unit** |
 | `/alexa/lwa-status` | GET | Login-with-Amazon status |
 | `/alexa/tap-talk-tone` | GET/PUT | Tap tone enable |
 | `/alexa/wake-word-tone` | GET/PUT | Wake word tone enable |
@@ -277,16 +353,18 @@ All hardware commands go to `https://control.sandmandoppler.com/{dsn}/...`:
 
 `RequestGate` is a *priority* gate, not a bare `Mutex`, and the distinction matters:
 
-- `DopplerRepository.refresh()` issues **22 sequential GETs**. Under a plain fair mutex, a user action issued mid-sweep queues behind every remaining poll request. Over `control.sandmandoppler.com` that produced a measured **10–20 s delay** before a volume change was even sent. That is the reason this gate exists — do not "simplify" it back to a `Mutex`.
+- `DopplerRepository.refresh()` issues **25 sequential GETs**. Under a plain fair mutex, a user action issued mid-sweep queues behind every remaining poll request. Over `control.sandmandoppler.com` that produced a measured **10–20 s delay** before a volume change was even sent. That is the reason this gate exists — do not "simplify" it back to a `Mutex`.
 - `INTERACTIVE` = user-initiated (slider commits, toggles, alarm edits, probes). Served ahead of queued polls.
 - `BACKGROUND` = the periodic poll. Yields to anything interactive.
-- **Every getter must go through `executePollRequest(path)`** (there are 33 such getters), never `executeAuthenticatedRequest("GET", ...)`. Centralizing it is deliberate: tagging getters by hand is how one gets missed, and a single stray interactive read reintroduces the lag. `RequestSerializationTest` pins it. Of those 33, exactly **22 are called by `refresh()`** — so the poll sweep is 22 requests even though the getter surface is wider.
+- **Every getter must go through `executePollRequest(path)`** (there are 34 such getters), never `executeAuthenticatedRequest("GET", ...)`. Centralizing it is deliberate: tagging getters by hand is how one gets missed, and a single stray interactive read reintroduces the lag. `RequestSerializationTest` pins it. Of those 34, exactly **25 are called by `refresh()`** — so the poll sweep is 25 requests even though the getter surface is wider.
 - The one exception is `executeConfirmRequest(path)` — the post-write read-back used to confirm a value actually landed (e.g. firmware clamping brightness). It is interactive because it exists to reflect a user action immediately.
 - New endpoints: writes default to `INTERACTIVE` (the default parameter), so only new *getters* need attention.
 
 ### Cost of serialization
 
 Serializing is not free: a poll cycle is now the sum of 22 round-trips. On a slow link that can exceed the poll interval, so the poll is effectively always running. Priority ordering keeps the user responsive, but if latency stays high, the fix is to trim the poll (fewer endpoints, adaptive interval, or skip reads while the user is actively dragging) — not to weaken the gate.
+
+**Not every socket goes through the gate.** `LocationResolver` calls Open-Meteo and Nominatim — unrelated third-party internet hosts that never touch the hardware. Serializing those behind the clock gate would make a place lookup wait on a poll sweep for no benefit. The invariant protects the *hardware* from concurrent requests, not every network call in the app.
 
 ## Verdict Taxonomy (for probeOverrideSupport)
 
@@ -324,7 +402,7 @@ taxonomy, optimistic-update rollback, drag coalescing, protocol/payload shapes.
 
 ## Open Issues — Do Not Assume Any of These Are Fixed
 
-1. **Poll cost.** `refresh()` is 22 sequential GETs, so one poll cycle is the *sum* of 22
+1. **Poll cost.** `refresh()` is 25 sequential GETs, so one poll cycle is the *sum* of 25
    round-trips. On a slow link that exceeds the poll interval and the poller is effectively
    always running. `startPolling` now yields `max(interval, elapsed)` to guarantee an idle
    gap, and per-call deadlines stop a stall from blocking the user, but total load is
@@ -434,7 +512,7 @@ Both must exit 0. Test counts are readable from
 - Assert the *absence* of a fault where it matters: a test that a 500 does not poison the gate,
   wrapped in `withTimeout`, because a leaked lock would otherwise hang the suite instead of
   failing it.
-- Prefer centralizing a rule over applying it by hand. The 33 getters were routed through
+- Prefer centralizing a rule over applying it by hand. The 34 getters were routed through
   one `executePollRequest(path)` helper specifically because hand-tagging 22 call sites is how
   one gets missed.
 
@@ -447,11 +525,17 @@ Both must exit 0. Test counts are readable from
 | `api/RequestGate.kt` | Priority gate. Read the KDoc before touching concurrency |
 | `api/RequestTelemetry.kt` | Last-64 request durations/outcomes. **Check Diagnostics before diagnosing latency** |
 | `api/LocalTokenManager.kt` | Nonce/`localKey` Bearer derivation, has its own separate mutex |
-| `repository/DopplerRepository.kt` | The 22-request `refresh()` poll, optimistic updates, `probeOverrideSupport()` |
+| `repository/DopplerRepository.kt` | The 25-request `refresh()` poll, optimistic updates, `probeOverrideSupport()` |
 | `viewmodel/DopplerViewModel.kt` | UI state, poll interval (8000 ms) |
 | `ui/DragCommitGate.kt` | Trailing-edge write coalescing (250 ms) |
 | `ui/screens/DiagnosticsScreen.kt` | Transport/link reporting, override probe card, `OverrideVerdict.color()` |
 | `model/DopplerModels.kt` | Wire models, `OverrideProbeResult`, `OverrideVerdict`, `DopplerColor` (5 presets) |
+| `api/LocationResolver.kt` | Typed place name / postal code → coordinates. Open-Meteo for text, Nominatim for numeric |
+| `model/WeatherMode.kt` | The `wsmode` decode: provider + statistic + unit, with plain-language labels |
+| `model/PlaceCandidate.kt` | A resolved place; `coordinateString` is **what actually reaches the clock** |
+| `model/ClockTime.kt` | `HH:mm` parse/format for `weatherwakeup-time`. Rejects `"+10:00"` and `"24:00"` |
+| `storage/WeatherPlaceStore.kt` | Remembers the place **name** — the clock keeps only coordinates |
+| `ui/screens/WeatherScreen.kt` | Weather tab. Built for elderly users: no coordinates typed, no raw `wsmode` |
 | `MainActivity.kt` | `buildApi()` cloud-vs-local selection, cloud token refresh |
 
 ---

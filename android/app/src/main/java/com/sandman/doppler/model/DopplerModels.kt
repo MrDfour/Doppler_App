@@ -432,7 +432,17 @@ data class DopplerDeviceState(
     // Weather
     val weatherEnabled: Boolean = false,
     val weatherLocation: String = "",
+    /** Raw `wsmode` from the clock. Decode with `WeatherMode.fromWire`. */
+    val weatherMode: Int = 2,
     val weatherWakeupTime: String = "06:00",
+    /**
+     * IANA timezone the clock believes it is in, e.g. `America/Chihuahua`.
+     *
+     * Worth surfacing because it can silently be wrong: this unit shipped set to
+     * `Canada/Saskatchewan`. Both that and the correct zone are UTC-06:00, so the
+     * displayed time was correct and the fault was invisible.
+     */
+    val clockTimezone: String? = null,
     val currentTemperatureF: Int = 72,
 
     /**

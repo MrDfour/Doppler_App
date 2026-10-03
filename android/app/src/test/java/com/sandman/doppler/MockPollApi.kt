@@ -14,13 +14,16 @@ import com.sandman.doppler.model.DopplerLowToHighTransition
 import com.sandman.doppler.model.DopplerSoundPreset
 import com.sandman.doppler.model.DopplerSync
 import com.sandman.doppler.model.DopplerTimeMode
+import com.sandman.doppler.model.DopplerTimezone
 import com.sandman.doppler.model.DopplerUseColon
 import com.sandman.doppler.model.DopplerUtcTime
 import com.sandman.doppler.model.DopplerVolume
+import com.sandman.doppler.model.DopplerWeather
+import com.sandman.doppler.model.DopplerWeatherWakeupTime
 import com.sandman.doppler.model.DopplerWifiStatus
 
 /**
- * A [DopplerLocalApi] with every one of the 22 polled endpoints overridden.
+ * A [DopplerLocalApi] with every one of the 25 polled endpoints overridden.
  *
  * `DopplerRepository.refresh()` bails out by throwing once 4 endpoints have errored, so a
  * partial mock makes any test that calls `refresh()` fail for reasons that have nothing to
@@ -66,4 +69,14 @@ internal open class MockPollApi : DopplerLocalApi(
     override suspend fun getAlarms(): List<DopplerAlarm> = emptyList()
 
     override suspend fun getAlarmSounds(): List<String> = emptyList()
+
+    override suspend fun getWeather() = DopplerWeather(
+        wsonoff = true,
+        location = "27.1258,-104.9118",
+        wsmode = 2
+    )
+
+    override suspend fun getWeatherWakeupTime() = DopplerWeatherWakeupTime(weatherwakeuptime = "10:00")
+
+    override suspend fun getTimezone() = DopplerTimezone(timezone = "America/Chihuahua")
 }

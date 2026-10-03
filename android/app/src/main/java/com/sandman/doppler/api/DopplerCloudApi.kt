@@ -178,7 +178,7 @@ open class DopplerCloudApi(
      * The 401 branch used to call [refreshTokenProvider] inline, once per request, while
      * holding [requestGate]. That is harmless when the refresh *succeeds* - the token is
      * written back and later requests are accepted - but it is a disaster when it fails:
-     * a dead refresh token meant every one of the 22 poll reads paid a failed refresh
+     * a dead refresh token meant every one of the poll reads paid a failed refresh
      * round-trip to `api.sandmandoppler.bycopilot.com` before retrying and failing again.
      * Each of those is another network call inside the gate, which is the erratic
      * 2s-to-30s behaviour reported on device.

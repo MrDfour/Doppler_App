@@ -142,7 +142,7 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                         }
                     }
                     Text(
-                        "A poll sweep is 22 sequential requests. If Median is high, the relay " +
+                        "A poll sweep is 25 sequential requests. If Median is high, the relay " +
                             "is the bottleneck; if Max is much worse than Median, individual " +
                             "requests are stalling.",
                         color = Slate400, fontSize = 11.sp
@@ -166,13 +166,13 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                     )
                     if (unavailableEndpoints.isEmpty()) {
                         Text(
-                            "All 22 polled endpoints answered the last sweep.",
+                            "All 25 polled endpoints answered the last sweep.",
                             color = Emerald400,
                             fontSize = 12.sp
                         )
                     } else {
                         Text(
-                            "These ${unavailableEndpoints.size} of the 22 polled endpoints never " +
+                            "These ${unavailableEndpoints.size} of the 25 polled endpoints never " +
                                 "return on this clock, so they are skipped rather than retried - each one " +
                                 "costs roughly 15 seconds and requests are serialized. Controls that depend " +
                                 "on them are disabled in the UI rather than showing an invented default.",

@@ -273,6 +273,17 @@ class DopplerRepositoryTest {
         override suspend fun getLowToHighTransition(): DopplerLowToHighTransition = DopplerLowToHighTransition(45)
         override suspend fun getAlarms(): List<DopplerAlarm> = emptyList()
         override suspend fun getAlarmSounds(): List<String> = emptyList()
+        // refresh() polls these too. Without them the mock reaches for a real socket on
+        // 192.168.1.100 and the poll never completes inside the test's virtual time.
+        override suspend fun getWeather(): DopplerWeather = DopplerWeather(
+            wsonoff = true,
+            location = "27.1258,-104.9118",
+            wsmode = 2
+        )
+        override suspend fun getWeatherWakeupTime(): DopplerWeatherWakeupTime =
+            DopplerWeatherWakeupTime(weatherwakeuptime = "10:00")
+        override suspend fun getTimezone(): DopplerTimezone =
+            DopplerTimezone(timezone = "America/Chihuahua")
         
         // Stub implementations for other methods
         override suspend fun setTimeMode(mode: Int): DopplerTimeMode = DopplerTimeMode(mode)

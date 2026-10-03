@@ -55,7 +55,7 @@ A thorough audit of the original repository against the official Sandman Doppler
 | **Transport & Port** | Cleartext HTTP on port `3000` (`http://host:3000/api/devices/...`) | Local HTTPS on port `5443` (`https://host:5443/{dsn}/...`) powered by `oatpp/1.3.0` | 🔴 **Critical** |
 | **SSL / TLS Policy** | Relies on cleartext HTTP | Uses local self-signed certificate on port 5443; requires custom LAN `X509TrustManager` | 🔴 **Critical** |
 | **Authentication** | Dummy/No token required | Two-tier: One-time Cloud provision to get `localKey`, then continuous local `nonce` fetch + `SHA-256(nonce + localKey)` Base64 Bearer token | 🔴 **Critical** |
-| **API Surface** | Single simulated `/api/devices/:id` monolithic JSON endpoint in `server.ts` | 67 endpoint methods in `DopplerLocalApi` (33 getters, of which **22 are polled** each cycle). *This plan previously said "78 endpoints"; that figure was never verified and is wrong — see §2.3.* | 🔴 **Critical** |
+| **API Surface** | Single simulated `/api/devices/:id` monolithic JSON endpoint in `server.ts` | 67 endpoint methods in `DopplerLocalApi` (34 getters, of which **25 are polled** each cycle). *This plan previously said "78 endpoints"; that figure was never verified and is wrong — see §2.3.* | 🔴 **Critical** |
 | **Concurrency Constraint** | Unthrottled parallel requests | Clock's embedded `oatpp` web server has a single-threaded request handler; concurrent requests cause hangs/crashes | 🟠 **High** |
 | **Onboarding / Pairing** | Hardcoded static IP `192.168.1.142` in `TokenStore` | Needs in-app cloud login flow to retrieve `localKey` and DSN directly from phone, plus manual IP/key entry and mDNS discovery | 🔴 **Critical** |
 | **Build Wrapper** | Missing `gradlew` / `gradlew.bat` in `android/` | Android Studio can build, but CLI CI commands require the Gradle wrapper | 🟡 **Medium** |
@@ -248,6 +248,45 @@ sequenceDiagram
 8. **Weather & Alexa** — all **[HW]** verified:
    - `GET|PUT /<dsn>/software/weather`: → `{"wsonoff":true,"location":"78852","wsmode":2}`
    - `GET|PUT /<dsn>/software/weather-wakeup-time`: → `{"weatherwakeuptime":"10:00"}`
+
+   **`location` is free-form passthrough — the clock performs zero validation.** Measured on
+   the Enter Sandman: all four of `27.1258,-104.9118`, `33980`, `Jimenez, Chihuahua, Mexico`
+   and `78852` were written and read back byte-identically. `location` is passed to
+   weatherapi.com's `q` parameter, which accepts a city name, `lat,lon`, a US ZIP, a UK/Canada
+   postal code, a METAR, an IATA code or an IP. weatherapi.com does **not** document Mexican
+   postal codes, and the official app's ZIP-only input is a *UI restriction, not a protocol
+   limit*.
+
+   With `location="27.1258,-104.9118"`, `wsmode=2`, `wsonoff=true`, the clock displayed 20° and
+   cloudy — matching Open-Meteo's 19.5 °C daily max / WMO 3 overcast for those coordinates.
+   Previously showing Seguin, Texas (26.6 °C, WMO 1). **Weather therefore works outside the US
+   when the location is given as coordinates**, which is what this app always sends.
+
+   > **Postal codes are ambiguous across countries and the clock will not warn you.** `33980` is
+   > simultaneously the Mexican postal code for Jiménez, Chihuahua **and** a valid US ZIP for
+   > Port Charlotte, Florida. Passing the bare string produces US weather *in silence* — wrong
+   > data, no error. This app resolves typed input to coordinates before writing, so the raw
+   > string never reaches the clock.
+
+   **`wsmode` is three choices packed into one integer** — provider, statistic, unit — so the
+   number alone is meaningless. Recovered from `doppyler` 0.0.20 (the Python client pinned by
+   Palo Alto Innovation's own `ha-doppler` integration), whose `WeatherMode` enum annotates each
+   value with its backend:
+
+   | `wsmode` | Provider | Meaning |
+   | :--- | :--- | :--- |
+   | 0 | — | Off |
+   | 1–12 | weatherapi.com | **resolves worldwide** — daily high °F/°C (1,2), avg humidity (3), daily AQI (4), min temp °F/°C (5,6), min/max humidity (7,8), hourly temp °F/°C (9,10), hourly humidity/AQI (11,12) |
+   | 13–17 | US National Weather Service | **US-only, cannot resolve a non-US location** — daily forecast °F/°C (13,14), hourly obs °F/°C (15,16), hourly humidity (17) |
+
+   Modes 2 and 14 both mean "today's high in Celsius" and differ *only* in provider. Picking
+   14 in Mexico cannot work.
+
+   **`weatherwakeuptime` is a forecast announcement alarm, not a refresh interval.** The clock
+   updates its current temperature and weather icon as soon as new data reaches it; this time
+   is when it *speaks* the forecast. (Confirmed by the owner from direct observation of the
+   official app.) Consequently a mode showing the *daily high* evaluated at 10:00 freezes a
+   mid-morning value — the wakeup time is best set in the evening.
    - `GET /<dsn>/alexa/lwa-status`: → `{"status":false,"timestamp":254}`
    - `GET|PUT /<dsn>/alexa/tap-talk-tone`: → `{"tone":true}`
    - `GET|PUT /<dsn>/alexa/wake-word-tone`: → `{"tone":true}`
@@ -271,7 +310,7 @@ overrides §2.2 wherever they disagree.**
 | `software/use-fade-time` | yes | |
 | `software/display-seconds` | yes | Also read-only (`PUT` → 500) |
 
-> **These six are ~90 seconds of dead time per poll cycle.** They are 6 of the 22 polled
+> **These six are ~90 seconds of dead time per poll cycle.** They are 6 of the 25 polled
 > endpoints, and requests are serialized through the request gate, so each one blocks the
 > cycle for its full ~15s timeout. This is the **dominant remaining latency term** — larger
 > than anything the client-side timeout work addressed — and it is a **server-side fault that
@@ -324,7 +363,7 @@ android/app/src/main/java/com/sandman/doppler/
 │   ├── DopplerModels.kt             # Typed models; wire names pinned by WireSchemaTest
 │   └── DopplerState.kt              # Unified immutable UI state for Compose
 ├── repository/
-│   └── DopplerRepository.kt         # Poller (22 GETs), optimistic mutations, alarm reconciliation
+│   └── DopplerRepository.kt         # Poller (25 GETs), optimistic mutations, alarm reconciliation
 ├── security/
 │   └── TokenStore.kt                # EncryptedSharedPreferences (Keystore AES-256-GCM)
 ├── ui/
@@ -385,7 +424,7 @@ android/app/src/main/java/com/sandman/doppler/
     `ignoreUnknownKeys = true` the errors were silent. Now corrected via `@SerialName` and
     pinned by `WireSchemaTest` (7 tests) against verbatim live payloads. See §2.3.
   - Note: the plan previously said "all 78 endpoints". The real surface is **67 methods / 33
-    getters / 22 polled**.
+    getters / 25 polled**.
 
 - [x] **Task 1.4: Refactor `DopplerLocalApi.kt` for Authentic Endpoints**
   - Path: `android/app/src/main/java/com/sandman/doppler/api/DopplerLocalApi.kt`
@@ -486,7 +525,7 @@ android/app/src/main/java/com/sandman/doppler/
       *default parameter* is 5000 ms — **trust the call site, not the default.**
     - The adaptive delay yields `max(interval, elapsed)`, so a cycle that overruns its interval
       still leaves an idle gap rather than immediately re-firing.
-    - `refresh()` issues **22 GETs**, serialized through the request gate. Six of them currently
+    - `refresh()` issues **25 GETs**, serialized through the request gate. Six of them currently
       hang ~15s each server-side (§2.3), so a full cycle costs ~90s of dead time. This is the
       **largest remaining latency term** and is not fixable client-side.
   - Verification: Polling loop runs smoothly without memory leaks or race conditions under coroutine lifecycle tests (`DopplerRepositoryTest.kt`).
@@ -548,6 +587,37 @@ android/app/src/main/java/com/sandman/doppler/
   - Custom scrolling text input to send text to the main 7-segment display (`PUT /<dsn>/hardware/display-text`).
   - Mini-display numeric override (-199 to 199) (`PUT /<dsn>/hardware/small-display-digits`).
 
+- [x] **Task 4.7: Weather Screen (`WeatherScreen.kt`)**
+
+  Targets the stated users — elderly parents — so plain language throughout, large touch
+  targets, and no field the user can get wrong.
+
+  - **Show weather on the clock** — `wsonoff` toggle.
+  - **Where is the clock looking?** — the user types a **town name or postal code**, never
+    coordinates. Two providers, chosen by input shape:
+    - place names → **Open-Meteo geocoding** (no key, global, returns an IANA timezone);
+    - numeric input → **Nominatim** (OpenStreetMap), because Open-Meteo answers the numeric
+      query `33980` with *"Pola de Laviana, Spain"* and *"Audenge, France"*.
+    Both return **all** matching candidates with country labels, so the user picks. That is
+    not polish: `Jimenez` alone matches eight places across Mexico, Spain, the Philippines
+    and Costa Rica, and `33980` matches both Jiménez, Chihuahua and Port Charlotte, Florida.
+    Only the coordinates of a chosen place are ever written to the clock.
+  - **What should the clock show?** — `wsmode` presented by *what it displays*, grouped by
+    provider, with the US-only group labelled, since those five modes cannot resolve a
+    non-US location. Never shown as a raw number.
+  - **When should the clock say the forecast?** — `weatherwakeuptime` as hour/minute
+    **steppers**, not a text box. A free-text field invites `24:00`, and a lenient parser
+    turns that into `00:00`, silently moving the announcement into the night. Help text
+    states plainly that the temperature and icon keep themselves current regardless.
+  - **Clock time zone** — shows `doptime/timezone` and is set automatically from the
+    resolved place.
+
+  Supporting types: `model/WeatherMode.kt` (the `wsmode` decode),
+  `model/PlaceCandidate.kt` + `model/ClockTime.kt`, `api/LocationResolver.kt`,
+  `storage/WeatherPlaceStore.kt` (remembers the place *name*, which the clock does not keep —
+  it stores only the coordinate string, so after an app restart the coordinates would
+  otherwise be all the UI could show).
+
 - [x] **Task 4.5: Onboarding & Settings Wizard (`SettingsScreen.kt`)**
   - Connection status card (Host, Port 5443, DSN, Firmware version, Uptime).
   - "Add / Reconnect Doppler" wizard:
@@ -555,7 +625,7 @@ android/app/src/main/java/com/sandman/doppler/
     - Tab 2: **Manual Local Key** (enter IP, DSN, and LocalKey directly).
     - Tab 3: **LAN Scan** (auto-detect Doppler IP via mDNS or subnet sweep).
   - Clock behavior settings: 12h/24h toggle, leading zero, colon blink, fade-time, display seconds on mini screen, timezone selector.
-  - Weather location settings (`location` zip/city, weather enabled toggle).
+  - Weather settings live in their own screen — see Task 4.7 below.
 
 ---
 
@@ -671,3 +741,14 @@ If an agent or session is interrupted by token quotas, network timeouts, or powe
    correct as written: the repository applies an optimistic update, rolls back on failure, and the
    next poll reconciles, so the slider follows authoritative state either way. The draft's job is
    only to stop the slider fighting the finger during the round trip. Not a defect.
+9. **The weather provider the clock actually calls is inferred, not proven.** The `wsmode` →
+   provider mapping comes from `doppyler`'s source. Displayed output was confirmed once
+   (coordinates + `wsmode=2` → 20°, cloudy, matching Open-Meteo), but that pins modes 1–12 as a
+   group only. **Untested:** whether any `wsmode` in 13–17 works outside the US — expected not
+   to, since the NWS publishes no non-US data. Worth one experiment before trusting the
+   "US-only" label in the picker.
+10. **Clock timezone was silently wrong and is now corrected.** The unit shipped set to
+   `Canada/Saskatchewan`; corrected to `America/Chihuahua` and read back. Both are UTC−06:00
+   with no DST, so **the displayed time never moved and the fault was invisible** — worth
+   remembering that a correct clock face is not evidence of a correct timezone. The Weather
+   screen now surfaces it, and picking a place sets it from the resolved location.

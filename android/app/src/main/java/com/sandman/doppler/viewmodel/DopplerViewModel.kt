@@ -2,9 +2,11 @@ package com.sandman.doppler.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sandman.doppler.api.LocationResolver
 import com.sandman.doppler.api.RequestTelemetry
 import com.sandman.doppler.model.*
 import com.sandman.doppler.repository.DopplerRepository
+import com.sandman.doppler.storage.WeatherPlaceStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +22,20 @@ data class DiagnosticsLog(
 )
 
 class DopplerViewModel(
-    private val repository: DopplerRepository
+    private val repository: DopplerRepository,
+    /**
+     * Turns typed place names and postal codes into coordinates.
+     *
+     * Injectable so tests can point it at a stub instead of the real geocoders.
+     */
+    private val locationResolver: LocationResolver = LocationResolver(),
+    /**
+     * Optional so tests can run without an Android Context.
+     *
+     * Holds the place name behind the coordinates on the clock, which the clock itself
+     * does not keep.
+     */
+    private val placeStore: WeatherPlaceStore? = null
 ) : ViewModel() {
 
     val deviceState: StateFlow<DopplerDeviceState?> = repository.deviceState
@@ -395,6 +410,162 @@ class DopplerViewModel(
 
     fun pressButton(button: String) {
         addLog("EVENT", "Pressed button: $button", "Triggered from mobile dashboard")
+    }
+
+    // ---------------------------------------------------------------------
+    // Weather
+    // ---------------------------------------------------------------------
+
+    private val _placeResults = MutableStateFlow<List<PlaceCandidate>>(emptyList())
+    val placeResults: StateFlow<List<PlaceCandidate>> = _placeResults
+
+    private val _isSearchingPlaces = MutableStateFlow(false)
+    val isSearchingPlaces: StateFlow<Boolean> = _isSearchingPlaces
+
+    private val _placeSearchMessage = MutableStateFlow<String?>(null)
+    val placeSearchMessage: StateFlow<String?> = _placeSearchMessage
+
+    private val _savedPlaceLabel = MutableStateFlow(placeStore?.savedLabel)
+
+    /**
+     * Name of the place the clock's coordinates belong to, or null when unknown.
+     *
+     * Null is a normal state, not a failure: the clock only stores the coordinate string,
+     * so until a place is picked through this app the label is genuinely not known.
+     */
+    val savedPlaceLabel: StateFlow<String?> = _savedPlaceLabel
+
+    init {
+        // Re-checked against the clock on every poll. If the location was changed from the
+        // official app or another phone, the remembered name no longer describes what the
+        // clock is using, so it is dropped rather than shown.
+        viewModelScope.launch {
+            repository.deviceState.collect { state ->
+                _savedPlaceLabel.value = placeStore?.labelFor(state?.weatherLocation)
+            }
+        }
+    }
+
+    /**
+     * Resolves free-text input to candidate places.
+     *
+     * The clock is never sent what the user typed. Free text goes to a third-party
+     * geocoder, and only the coordinates of a place the user then *picks* reach the
+     * clock. That is deliberate: postal codes mean different things in different
+     * countries, and `33980` is both a Mexican postal code and a valid US ZIP.
+     *
+     * Deliberately not debounced per keystroke - Nominatim asks for at most one request
+     * a second, so a search that fires as fast as someone types would be refused.
+     * The screen sends one search per explicit Search action instead.
+     */
+    fun searchPlaces(query: String) {
+        if (_isSearchingPlaces.value) return
+        viewModelScope.launch {
+            _isSearchingPlaces.value = true
+            _placeSearchMessage.value = null
+            try {
+                val results = locationResolver.search(query)
+                _placeResults.value = results
+                if (results.isEmpty()) {
+                    _placeSearchMessage.value =
+                        "No place found for \"$query\". Try a town name, such as \"Chihuahua\"."
+                }
+            } catch (e: LocationLookupException) {
+                _placeResults.value = emptyList()
+                _placeSearchMessage.value = e.message ?: "Place search failed"
+            } catch (e: Exception) {
+                _placeResults.value = emptyList()
+                _placeSearchMessage.value = "Place search failed: ${e.message ?: "unknown error"}"
+            } finally {
+                _isSearchingPlaces.value = false
+            }
+        }
+    }
+
+    fun clearPlaceResults() {
+        _placeResults.value = emptyList()
+        _placeSearchMessage.value = null
+    }
+
+    /**
+     * Points the clock at [place] and, when the geocoder knew one, fixes the timezone too.
+     *
+     * Setting the timezone here is safe because it comes from the resolved place rather
+     * than from the user. The clock's own timezone can be silently wrong - this unit
+     * shipped set to `Canada/Saskatchewan` - and both that and the correct zone are
+     * UTC-06:00, so nothing visible revealed the fault.
+     */
+    fun applyPlace(place: PlaceCandidate) {
+        viewModelScope.launch {
+            try {
+                repository.updateWeatherLocation(place.coordinateString)
+                addLog(
+                    "COMMAND", "Set weather location",
+                    "${place.displayLabel} -> ${place.coordinateString}"
+                )
+                // Only remembered once the clock has accepted it, so a failed write
+                // cannot leave a name on screen for a location the clock never took.
+                placeStore?.remember(place)
+                val tz = place.timezone
+                if (!tz.isNullOrBlank()) {
+                    repository.updateClockTimezone(tz)
+                    addLog("COMMAND", "Set clock timezone", tz)
+                }
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set weather location", e.message ?: "")
+            }
+        }
+    }
+
+    fun setWeatherEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateWeatherEnabled(enabled)
+                addLog("COMMAND", "Set weather display", if (enabled) "On" else "Off")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to change weather display", e.message ?: "")
+            }
+        }
+    }
+
+    fun setWeatherMode(mode: Int) {
+        viewModelScope.launch {
+            try {
+                repository.updateWeatherMode(mode)
+                val label = WeatherMode.labelFor(mode)
+                addLog("COMMAND", "Set weather reading", "$label (wsmode $mode)")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to change weather reading", e.message ?: "")
+            }
+        }
+    }
+
+    /**
+     * Sets the time the clock announces its forecast.
+     *
+     * Not a refresh interval: the clock's current weather and icon update as soon as new
+     * data reaches it. This is when it *says* the forecast, alarm-style.
+     */
+    fun setWeatherWakeupTime(time: String) {
+        viewModelScope.launch {
+            try {
+                repository.updateWeatherWakeupTime(time)
+                addLog("COMMAND", "Set forecast announcement time", time)
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to change forecast time", e.message ?: "")
+            }
+        }
+    }
+
+    fun setClockTimezone(timezone: String) {
+        viewModelScope.launch {
+            try {
+                repository.updateClockTimezone(timezone)
+                addLog("COMMAND", "Set clock timezone", timezone)
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set clock timezone", e.message ?: "")
+            }
+        }
     }
 
     /**

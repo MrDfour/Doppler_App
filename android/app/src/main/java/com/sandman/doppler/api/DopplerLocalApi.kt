@@ -94,7 +94,7 @@ open class DopplerLocalApi(
      * silently bypassing it. The Doppler's oatpp daemon is single-threaded, so two
      * overlapping requests can interleave or drop one another.
      *
-     * This is a priority gate, not a bare mutex: the repository polls 22 endpoints in a
+     * This is a priority gate, not a bare mutex: the repository polls 25 endpoints in a
      * row, and on a high-latency link a fair-but-unprioritized lock would make a user
      * action wait behind the entire remaining sweep. See [RequestGate].
      */

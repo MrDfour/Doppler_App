@@ -9,7 +9,7 @@ import kotlinx.coroutines.sync.withLock
  *
  * The Doppler's oatpp daemon is single-threaded, so only one request may be in flight
  * at a time - a plain [Mutex] is enough to guarantee that. But a plain mutex is
- * first-come-first-served, and the repository's poll cycle is *22 sequential GETs*
+ * first-come-first-served, and the repository's poll cycle is *25 sequential GETs*
  * ([DopplerRepository.refresh]). Under a fair mutex a user action issued mid-sweep has
  * to queue behind every remaining poll request, which over a high-latency link like
  * `control.sandmandoppler.com` means seconds of delay before a volume change is even
@@ -20,7 +20,7 @@ import kotlinx.coroutines.sync.withLock
  * the single poll request already in flight, not for the whole sweep.
  *
  * One caveat worth knowing: serializing requests is not free. Every request, user or
- * poll, is now strictly one-at-a-time, so total poll duration is the sum of 22
+ * poll, is now strictly one-at-a-time, so total poll duration is the sum of 25
  * round-trips. Over a WAN link that can exceed the poll interval, which means the poll
  * is effectively always running. Priority ordering keeps that from delaying the user,
  * but if the link is slow enough the poll itself should be trimmed or made adaptive.

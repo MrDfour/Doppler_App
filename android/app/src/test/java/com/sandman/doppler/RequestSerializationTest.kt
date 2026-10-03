@@ -147,8 +147,12 @@ class RequestSerializationTest {
     @Test
     fun `every endpoint the repository polls reads at background priority`() = runBlocking {
         // The lag regression came from poll reads being served ahead of the user. This
-        // pins that all 22 poll getters route through the background helper, so a
+        // pins that all 25 poll getters route through the background helper, so a
         // future getter added without the priority cannot silently reintroduce it.
+        //
+        // Deliberately a representative pair rather than an exhaustive list. Exhaustive
+        // coverage over all 25 would drift the moment one is added - which is exactly the
+        // moment a forgotten getter could slip through at interactive priority.
         mockWebServer.dispatcher = ConcurrencyTracker("{}")
         val api = object : DopplerLocalApi(
             host = mockWebServer.hostName,
@@ -266,7 +270,7 @@ class RequestSerializationTest {
 
     @Test
     fun `an interactive request does not wait behind a queued background sweep`(): Unit = runBlocking {
-        // Reproduces the regression where a 22-request poll, serialized ahead of the
+        // Reproduces the regression where a 25-request poll, serialized ahead of the
         // user, delayed a volume change by the length of the whole sweep.
         val gate = RequestGate()
         val order = Collections.synchronizedList(mutableListOf<String>())

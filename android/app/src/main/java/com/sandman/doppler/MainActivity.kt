@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
@@ -19,6 +20,7 @@ import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.repository.DopplerRepository
 import com.sandman.doppler.security.TokenStore
+import com.sandman.doppler.storage.WeatherPlaceStore
 import com.sandman.doppler.ui.screens.*
 import com.sandman.doppler.ui.theme.Cyan400
 import com.sandman.doppler.ui.theme.SandmanDopplerTheme
@@ -32,6 +34,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var localApi: DopplerLocalApi
     private lateinit var repository: DopplerRepository
     private lateinit var viewModel: DopplerViewModel
+    private lateinit var weatherPlaceStore: WeatherPlaceStore
 
     private fun buildApi(store: TokenStore): DopplerLocalApi {
         val dsn = store.savedDsn ?: "Doppler-00000000"
@@ -65,11 +68,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         tokenStore = TokenStore(applicationContext)
+        weatherPlaceStore = WeatherPlaceStore(applicationContext)
         // Prefer the cloud control plane when a Copilot cloud token is available;
         // fall back to the raw LAN daemon otherwise (e.g. manual provisioning).
         localApi = buildApi(tokenStore)
         repository = DopplerRepository(localApi)
-        viewModel = DopplerViewModel(repository)
+        viewModel = DopplerViewModel(repository, placeStore = weatherPlaceStore)
 
         setContent {
             SandmanDopplerTheme {
@@ -108,12 +112,18 @@ class MainActivity : ComponentActivity() {
                             NavigationBarItem(
                                 selected = selectedTab == 4,
                                 onClick = { selectedTab = 4 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") }
+                                icon = { Icon(Icons.Default.Cloud, contentDescription = "Weather") },
+                                label = { Text("Weather") }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 5,
                                 onClick = { selectedTab = 5 },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                label = { Text("Settings") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 6,
+                                onClick = { selectedTab = 6 },
                                 icon = { Icon(Icons.Default.Info, contentDescription = "Diagnostics") },
                                 label = { Text("Info") }
                             )
@@ -126,16 +136,20 @@ class MainActivity : ComponentActivity() {
                             1 -> DisplayLightingScreen(viewModel)
                             2 -> AlarmsScreen(viewModel)
                             3 -> LightBarScreen(viewModel)
-                            4 -> SettingsScreen(
+                            4 -> WeatherScreen(viewModel)
+                            5 -> SettingsScreen(
                                 viewModel = viewModel,
                                 tokenStore = tokenStore,
                                 onReconnect = {
                                     localApi = buildApi(tokenStore)
                                     repository = DopplerRepository(localApi)
-                                    viewModel = DopplerViewModel(repository)
+                                    viewModel = DopplerViewModel(
+                                        repository,
+                                        placeStore = weatherPlaceStore
+                                    )
                                 }
                             )
-                            5 -> DiagnosticsScreen(viewModel)
+                            6 -> DiagnosticsScreen(viewModel)
                         }
                     }
                 }
