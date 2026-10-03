@@ -155,11 +155,11 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         color = Color.LightGray, fontSize = 14.sp
                     )
                     Text(
-                        text = "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort} (HTTPS Port 5443)",
+                        text = "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort}" + if (!tokenStore.cloudAccessToken.isNullOrEmpty()) " (Cloud)" else " (HTTPS Port 5443)",
                         color = Color.LightGray, fontSize = 14.sp
                     )
                     Text(
-                        text = "Local Key: ${if (!tokenStore.authToken.isNullOrEmpty()) "Configured (Secure)" else "Missing"}",
+                        text = "Local Key: ${if (!tokenStore.authToken.isNullOrEmpty()) "Configured (Secure)" else if (!tokenStore.cloudAccessToken.isNullOrEmpty()) "Using Cloud Fallback" else "Missing"}",
                         color = Color.LightGray, fontSize = 14.sp
                     )
                 }
@@ -468,14 +468,17 @@ private fun CloudLoginTab(
 
             if (cloudSuccess != null) {
                 Spacer(modifier = Modifier.height(8.dp))
+                // Amber when only the cloud path is active; green when LAN also works.
+                val fallbackOnly = cloudSuccess!!.contains("LAN unavailable")
+                val accent = if (fallbackOnly) Amber400 else Emerald400
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Emerald400.copy(alpha = 0.15f)),
+                    colors = CardDefaults.cardColors(containerColor = accent.copy(alpha = 0.15f)),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald400, modifier = Modifier.size(18.dp))
+                        Icon(if (fallbackOnly) Icons.Default.Info else Icons.Default.CheckCircle, contentDescription = null, tint = accent, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = cloudSuccess, color = Emerald400, fontSize = 13.sp)
+                        Text(text = cloudSuccess!!, color = accent, fontSize = 13.sp)
                     }
                 }
             }
