@@ -209,32 +209,26 @@ class DopplerDiscovery(private val context: Context) {
      */
     private fun probeSingleHost(candidateIp: String, port: Int): DiscoveredDoppler? {
         return try {
-            // First, try to connect and get any response (even 401 proves it's an oatpp server)
+            // The authentic LAN API requires the DSN in every path, so a DSN-less
+            // probe cannot return 200. Any HTTP response (even 404) proves a TLS
+            // service is listening; we additionally prefer the oatpp Server header
+            // to confirm it is a Doppler clock rather than some other service.
             val request = Request.Builder()
-                .url("https://$candidateIp:$port/device")
+                .url("https://$candidateIp:$port/")
                 .get()
                 .build()
 
             scanClient.newCall(request).execute().use { response ->
-                // Even 401 Unauthorized (missing token) proves it's a Doppler
-                if (response.code == 200 || response.code == 401 || response.code == 403) {
-                    // Try to extract DSN from response body if 200
-                    var dsn: String? = null
-                    if (response.code == 200) {
-                        try {
-                            val body = response.body?.string()
-                            if (body != null) {
-                                val info = json.decodeFromString<DsnProbeResponse>(body)
-                                dsn = info.serialNum
-                            }
-                        } catch (_: Exception) {}
-                    }
+                val serverHeader = response.header("Server") ?: ""
+                val looksOatp = serverHeader.contains("oatpp", ignoreCase = true)
+                val plausibleStatus = response.code in listOf(200, 401, 403, 404)
 
+                if (looksOatp || (plausibleStatus && response.code != 404)) {
                     DiscoveredDoppler(
-                        name = if (dsn != null) "Sandman Doppler ($dsn)" else "Sandman Doppler ($candidateIp)",
+                        name = "Sandman Doppler ($candidateIp)",
                         host = candidateIp,
                         port = port,
-                        dsn = dsn
+                        dsn = null
                     )
                 } else {
                     null

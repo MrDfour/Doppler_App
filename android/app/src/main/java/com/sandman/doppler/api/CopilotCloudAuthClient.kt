@@ -12,7 +12,35 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 @Serializable
-data class CloudLoginRequest(val email: String, val pass: String)
+data class AuthenticationDetails(
+    val applicationId: String,
+    val email: String,
+    val password: String
+)
+
+@Serializable
+data class DeviceTimezone(
+    val currentTimeInClientInMilliseconds: Long,
+    val offsetFromUTCInMilliseconds: Long,
+    val timeZoneId: String
+)
+
+@Serializable
+data class DeviceDetails(
+    val applicationVersion: String,
+    val deviceId: String,
+    val deviceModel: String,
+    val deviceType: String,
+    val osType: String,
+    val osVersion: String,
+    val timezone: DeviceTimezone
+)
+
+@Serializable
+data class CloudLoginRequest(
+    val authenticationDetails: AuthenticationDetails,
+    val deviceDetails: DeviceDetails
+)
 
 @Serializable
 data class CloudLoginResponse(val accessToken: String, val refreshToken: String? = null)
@@ -76,8 +104,30 @@ class CopilotCloudAuthClient(
      */
     suspend fun login(email: String, pass: String): Result<String> = withContext(Dispatchers.IO) {
         try {
-            val reqBody = json.encodeToString(CloudLoginRequest.serializer(), CloudLoginRequest(email, pass))
-                .toRequestBody(jsonMediaType)
+            val tz = java.util.TimeZone.getDefault()
+            val reqBody = json.encodeToString(
+                CloudLoginRequest.serializer(),
+                CloudLoginRequest(
+                    authenticationDetails = AuthenticationDetails(
+                        applicationId = "SANDMANDOPPLER",
+                        email = email,
+                        password = pass
+                    ),
+                    deviceDetails = DeviceDetails(
+                        applicationVersion = "154",
+                        deviceId = android.os.Build.ID,
+                        deviceModel = android.os.Build.MODEL,
+                        deviceType = "PHONE",
+                        osType = "ANDROID",
+                        osVersion = android.os.Build.VERSION.RELEASE,
+                        timezone = DeviceTimezone(
+                            currentTimeInClientInMilliseconds = System.currentTimeMillis(),
+                            offsetFromUTCInMilliseconds = tz.getOffset(System.currentTimeMillis()).toLong(),
+                            timeZoneId = tz.id
+                        )
+                    )
+                )
+            ).toRequestBody(jsonMediaType)
 
             val request = Request.Builder()
                 .url("$BASE_AUTH_URL/v4/auth/login")
