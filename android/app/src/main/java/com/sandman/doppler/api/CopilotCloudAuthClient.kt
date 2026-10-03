@@ -222,18 +222,41 @@ class CopilotCloudAuthClient(
             val request = Request.Builder()
                 .url("$CONTROL_URL/$dsn/localkey")
                 .addHeader("Authorization", "Bearer $accessToken")
+                .addHeader("Accept", "application/json")
                 .get()
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext Result.failure(IOException("Failed to fetch localKey for $dsn: HTTP ${response.code}"))
+            var lastError: IOException? = null
+            for (attempt in 1..2) {
+                var retryOn408 = false
+                try {
+                    client.newCall(request).execute().use { response ->
+                        when {
+                            response.code == 408 && attempt < 2 -> {
+                                retryOn408 = true
+                                lastError = IOException("Failed to fetch localKey for $dsn: HTTP 408")
+                            }
+                            !response.isSuccessful -> {
+                                return@withContext Result.failure(
+                                    IOException("Failed to fetch localKey for $dsn: HTTP ${response.code}")
+                                )
+                            }
+                            else -> {
+                                val bodyStr = response.body?.string()
+                                    ?: return@withContext Result.failure(IOException("Empty response"))
+                                return@withContext Result.success(
+                                    json.decodeFromString<CloudLocalKeyResponse>(bodyStr)
+                                )
+                            }
+                        }
+                    }
+                    if (retryOn408) continue
+                } catch (e: IOException) {
+                    lastError = e
+                    if (attempt < 2) continue
                 }
-                val bodyStr = response.body?.string()
-                    ?: return@withContext Result.failure(IOException("Empty response"))
-                val keyRes = json.decodeFromString<CloudLocalKeyResponse>(bodyStr)
-                Result.success(keyRes)
             }
+            Result.failure(lastError ?: IOException("Failed to fetch localKey for $dsn"))
         } catch (e: Exception) {
             Result.failure(e)
         }
