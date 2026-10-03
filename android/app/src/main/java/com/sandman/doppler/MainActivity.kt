@@ -44,9 +44,10 @@ class MainActivity : ComponentActivity() {
                     if (refresh.isNullOrBlank()) return@DopplerCloudApi null
                     val result = CopilotCloudAuthClient().refreshAccessToken(refresh)
                     if (result.isSuccess) {
-                        store.cloudAccessToken = result.getOrNull()?.accessToken
+                        val fresh = result.getOrNull()?.accessToken
+                        if (!fresh.isNullOrBlank()) store.cloudAccessToken = fresh
                         store.cloudRefreshToken = result.getOrNull()?.refreshToken
-                        result.getOrNull()?.accessToken
+                        fresh
                     } else null
                 }
             )

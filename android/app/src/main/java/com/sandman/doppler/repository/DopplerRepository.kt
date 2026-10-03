@@ -1,5 +1,6 @@
 package com.sandman.doppler.repository
 
+import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerException
 import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.model.*
@@ -20,11 +21,19 @@ import kotlinx.coroutines.launch
  * Adheres to the hardware constraint that requests must be serialized (semaphore limit = 1).
  */
 class DopplerRepository(
-    private val localApi: DopplerLocalApi,
+    val localApi: DopplerLocalApi,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
     private val _deviceState = MutableStateFlow<DopplerDeviceState?>(null)
     val deviceState: StateFlow<DopplerDeviceState?> = _deviceState.asStateFlow()
+
+    /**
+     * How this repository reaches the clock: the Copilot cloud control plane, or the
+     * clock's own LAN daemon. Diagnostics reports this because the two paths have
+     * different failure modes and different latency, and guessing wrong sends you
+     * debugging the wrong network.
+     */
+    val isCloudControlPlane: Boolean get() = localApi is DopplerCloudApi
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -350,7 +359,12 @@ class DopplerRepository(
     private fun verdictForCode(code: Int?): OverrideVerdict = when (code) {
         null -> OverrideVerdict.UNKNOWN
         in 200..299 -> OverrideVerdict.SUPPORTED
+        // Taxonomy per SANDMAN_DOPPLER_KNOWLEDGE.md: a 400/422 means the clock DID
+        // route the request and refused our payload. Naming that NOT_SUPPORTED would
+        // wrongly send us hunting for a firmware gap that does not exist, so it is
+        // deliberately REJECTED and must not be reported as a firmware gap.
         400, 422 -> OverrideVerdict.REJECTED
+        // 404/405/501 mean no such route exists - the firmware does not implement it.
         404, 405, 501 -> OverrideVerdict.NOT_SUPPORTED
         else -> OverrideVerdict.UNKNOWN
     }

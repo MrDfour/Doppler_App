@@ -69,7 +69,16 @@ open class DopplerLocalApi(
     }
 
     private val tokenManager = LocalTokenManager(client, json)
-    private val requestMutex = Mutex()
+
+    /**
+     * Serializes every authenticated request to the clock.
+     *
+     * Protected rather than private so transport subclasses (notably [DopplerCloudApi],
+     * which replaces the request path wholesale) route through the same lock instead of
+     * silently bypassing it. The Doppler's oatpp daemon is single-threaded, so two
+     * overlapping writes can interleave or drop one another.
+     */
+    protected val requestMutex = Mutex()
 
     fun updateCredentials(newHost: String, newPort: Int, newDsn: String, newLocalKey: String) {
         this.host = newHost

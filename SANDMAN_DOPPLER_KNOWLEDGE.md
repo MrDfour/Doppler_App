@@ -64,11 +64,17 @@ All hardware commands go to `https://control.sandmandoppler.com/{dsn}/...`:
 | `/hardware/small-display-digits` | PUT | Mini-display number |
 | `/hardware/display-dots` | PUT | 29-LED lightbar animation |
 
+## Transport Invariants (enforced by tests)
+
+- **Serialized requests.** The Doppler's oatpp daemon is single-threaded, so *every* request must be serialized through `DopplerLocalApi.requestMutex`. This applies to the cloud path too: `DopplerCloudApi` overrides `executeAuthenticatedRequest` wholesale, so it must take the same lock or cloud mode silently runs requests concurrently. See `RequestSerializationTest`.
+- **One URL seam.** `DopplerCloudApi.buildUrl(path)` is the only place a control-plane URL is built. Override it to redirect cloud traffic at a test double; never inline a host literal.
+- The lock is released on every exit path, including thrown exceptions, so a failed request cannot poison the mutex.
+
 ## Verdict Taxonomy (for probeOverrideSupport)
 
 - `SUPPORTED` — clock accepted the PUT (2xx, no body returned)
-- `NOT_SUPPORTED` — clock routed the request but refused the payload (400/422); fix is on payload side
-- `REJECTED` — *do not report this as a firmware gap*
+- `REJECTED` — clock routed the request but refused the payload (400/422); fix is on payload side. **Do not report this as a firmware gap** — the route exists, so it is never a missing-implementation problem.
+- `NOT_SUPPORTED` — clock has no route for the endpoint at all (404/405/501); this *is* a firmware gap
 - `UNKNOWN` — unhandled HTTP status (500, 503, etc.)
 
 ---

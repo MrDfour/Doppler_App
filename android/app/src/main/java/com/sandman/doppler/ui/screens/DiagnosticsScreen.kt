@@ -33,6 +33,8 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
     val logs by viewModel.logs.collectAsState()
     val probeResults by viewModel.overrideProbeResults.collectAsState()
     val isProbing by viewModel.isProbingOverrides.collectAsState()
+    val isCloud = viewModel.isCloudControlPlane
+    val connectionModeLabel = viewModel.connectionModeLabel
 
     LazyColumn(
         modifier = Modifier
@@ -57,10 +59,36 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Connection Mode: DIRECT LOCAL WI-FI", color = Emerald400, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    // Report the path actually in use. These two fail in completely
+                    // different ways, so a wrong label here costs real debugging time.
+                    Text(
+                        text = "Connection Mode: $connectionModeLabel",
+                        color = if (isCloud) Amber400 else Emerald400,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
                     Text("Device DSN: ${state?.dsn ?: "N/A"}", color = Slate200, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text("IP Endpoint: ${state?.ipAddress ?: "N/A"}:3000", color = Slate400, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                    Text("Firmware: ${state?.firmwareVersion ?: "1.4.12"} | Model: ${state?.modelNumber ?: "PAI-DOPPLER-01"}", color = Slate400, fontSize = 12.sp)
+                    if (isCloud) {
+                        Text(
+                            "Endpoint: control.sandmandoppler.com (cloud relay)",
+                            color = Slate400, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        )
+                    } else {
+                        Text(
+                            "IP Endpoint: ${state?.ipAddress ?: "N/A"}:${state?.port ?: "N/A"}",
+                            color = Slate400, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Text(
+                        "Firmware: ${state?.firmwareVersion ?: "Unknown"} | Model: ${state?.modelNumber ?: "Unknown"}",
+                        color = Slate400, fontSize = 12.sp
+                    )
+                    Text(
+                        text = if (state?.online == true) "Link: UP" else "Link: DOWN",
+                        color = if (state?.online == true) Emerald400 else Rose500,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
                 }
             }
         }

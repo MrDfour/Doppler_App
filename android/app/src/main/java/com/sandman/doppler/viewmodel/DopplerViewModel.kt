@@ -23,6 +23,13 @@ class DopplerViewModel(
     val isRefreshing: StateFlow<Boolean> = repository.isRefreshing
     val lastError: StateFlow<String?> = repository.lastError
 
+    /** True when commands are going through the Copilot cloud rather than the LAN daemon. */
+    val isCloudControlPlane: Boolean get() = repository.isCloudControlPlane
+
+    /** Human-readable transport description for the diagnostics screen. */
+    val connectionModeLabel: String
+        get() = if (isCloudControlPlane) "CLOUD CONTROL PLANE" else "DIRECT LOCAL WI-FI"
+
     private val _logs = MutableStateFlow<List<DiagnosticsLog>>(emptyList())
     val logs: StateFlow<List<DiagnosticsLog>> = _logs
 
