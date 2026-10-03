@@ -355,9 +355,30 @@ open class DopplerLocalApi(
         }
     }
 
-    open suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String {
+    /**
+     * Create a new alarm. `POST /alarms` is **create-only** on real hardware: it ignores
+     * the id in the body and assigns its own sequential one. Verified against a live clock -
+     * POSTing `id: 200` produced `id: 4`, and POSTing `id: 4` produced a *new* `id: 5`
+     * rather than modifying 4.
+     *
+     * The response body is the entire alarm list, with the new alarm inserted first.
+     * Callers must reconcile against the clock's own id; see `DopplerRepository.addOrUpdateAlarm`.
+     */
+    open suspend fun createAlarm(alarm: DopplerAlarm): String {
         val body = json.encodeToString(alarm)
         return executeAuthenticatedRequest("POST", "alarms", body)
+    }
+
+    /**
+     * Update an existing alarm in place. `PUT /alarms/{id}` is the only mutating call that
+     * targets an existing alarm - verified live: it changed volume 100 -> 7 on alarm 4 with
+     * no new alarm created. `PUT /alarms` without an id is 404.
+     *
+     * Using `POST /alarms` for an edit does not update the alarm; it creates a duplicate.
+     */
+    open suspend fun updateAlarm(alarm: DopplerAlarm): String {
+        val body = json.encodeToString(alarm)
+        return executeAuthenticatedRequest("PUT", "alarms/${alarm.id}", body)
     }
 
     open suspend fun deleteAlarm(alarmId: Int): String {

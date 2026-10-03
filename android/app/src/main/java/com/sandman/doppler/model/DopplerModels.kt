@@ -181,11 +181,23 @@ data class DopplerAlarm(
     val repeat: String = "", // e.g. "MoTuWeThFr"
     val color: DopplerColorObject? = null,
     val volume: Int = 80,
-    val status: Int = 1, // 1 = enabled, 0 = disabled
+    val status: Int = STATUS_ACTIVE, // see STATUS_* below
     val sound: String = "Gentle.mp3",
     val src: Int = 1 // 1 = user, 0 = system
 ) {
-    val isEnabled: Boolean get() = status == 1
+    /**
+     * Live hardware reports `status: 10` on every active alarm - verified against a real
+     * clock, where the system alarm and both user alarms all came back as 10. This app
+     * previously assumed `1 = enabled`, which made `isEnabled` false for every alarm the
+     * device actually had, so they all rendered dimmed with the toggle showing off.
+     *
+     * `0` is stored verbatim by the clock when sent (verified), so 0 remains "disabled".
+     * `1` is still accepted because this app wrote it before the real value was known, and
+     * rejecting it would make previously-written alarms look disabled. Any other value is
+     * treated as active: an alarm is only shown as off when the clock positively says 0,
+     * because wrongly dimming a real alarm is worse than wrongly lighting up a stale one.
+     */
+    val isEnabled: Boolean get() = status != STATUS_DISABLED
     val isSystemAlarm: Boolean get() = id == 0
     val timeFormatted: String get() = String.format("%02d:%02d", time_hr, time_min)
 
@@ -200,6 +212,17 @@ data class DopplerAlarm(
             }
             return days
         }
+
+    companion object {
+        /** What live hardware reports for an active alarm. Verified on a real unit. */
+        const val STATUS_ACTIVE = 10
+
+        /** Stored verbatim by the clock when sent; the only value that means "off". */
+        const val STATUS_DISABLED = 0
+
+        /** Legacy value this app wrote before the real status was known. Still honoured. */
+        const val STATUS_LEGACY_ENABLED = 1
+    }
 }
 
 @Serializable

@@ -239,10 +239,19 @@ class DopplerViewModel(
     fun toggleAlarm(alarm: DopplerAlarm) {
         viewModelScope.launch {
             try {
-                val nextStatus = if (alarm.status == 1) 0 else 1
+                // Write the values the hardware actually uses: 10 for active, 0 for off. This
+                // previously wrote 1, which the clock had never been observed to send, so
+                // toggling a real alarm (status 10) wrote 1 and left the device in a state
+                // the app itself could not then read back correctly.
+                val nextStatus =
+                    if (alarm.isEnabled) DopplerAlarm.STATUS_DISABLED else DopplerAlarm.STATUS_ACTIVE
                 val updated = alarm.copy(status = nextStatus)
                 repository.addOrUpdateAlarm(updated)
-                addLog("COMMAND", "Toggled Alarm #${alarm.id}", "Enabled: ${nextStatus == 1}")
+                addLog(
+                    "COMMAND",
+                    "Toggled Alarm #${alarm.id}",
+                    "Enabled: ${nextStatus != DopplerAlarm.STATUS_DISABLED}"
+                )
             } catch (e: Exception) {
                 addLog("ERROR", "Failed to toggle alarm", e.message ?: "")
             }

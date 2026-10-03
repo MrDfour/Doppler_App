@@ -1,10 +1,89 @@
 # Sandman Doppler Knowledge Center
 
-> **Start here if you are a fresh agent session:** jump to **Cloud Latency: The Real Root
-> Cause** (timeouts, the refresh storm, and why measuring beats inferring), then **Read This
-> First: Repo State** (what is verified vs. still unproven), then **Open Issues** (what is
-> deliberately not fixed), then **The UI Write Path** (why sliders feel instant even when the
-> clock has not responded). The numbered sections below are protocol reference.
+> **Start here if you are a fresh agent session:** jump to **Live Hardware Findings** (what
+> the clock actually does — `POST /alarms` is create-only, `status` is 10, LAN is dead), then
+> **Cloud Latency: The Real Root Cause** (timeouts, the refresh storm, and why measuring
+> beats inferring), then **Read This First: Repo State** (what is verified vs. still
+> unproven), then **Open Issues** (what is deliberately not fixed), then **The UI Write
+> Path** (why sliders feel instant even when the clock has not responded). The numbered
+> sections below are protocol reference.
+
+---
+
+## Live Hardware Findings (probed against DSN `Doppler-10caaebb`, Oct 2026)
+
+Everything in this section was **observed on the real clock**, not inferred from source. It
+overrides assumptions the codebase used to make. If a test or comment here contradicts the
+code, the code is wrong.
+
+**Unit:** Enter Sandman, firmware `Escapement`, software `0.1214 Bucky`, serial
+`Doppler-10caaebb`, mfr `Palo Alto Innovation`.
+
+### LAN is not usable on this unit
+
+`192.168.11.107` answers ICMP (~37ms, TTL 64) but has **no open TCP port at all** — not 5443,
+not 443, nothing in 1–10000 that was scanned. Cloud relay mode is the only working transport.
+
+### `GET /{dsn}/localkey` returns HTTP 408, consistently
+
+4/4 attempts, ~15s each. `CopilotCloudAuthClient.fetchLocalKey` already retries once on 408.
+
+**Consequence:** the app can **never** learn a LAN IP from the cloud. `savedIpAddress` stays
+blank forever, so LAN mode cannot be configured automatically at all. This is why the
+onboarding screen used to display a hardcoded IP — it had nothing real to show (fixed in
+`9059a9f`: it now says "LAN host not discovered" rather than inventing one).
+
+### The cloud relay itself works fine for reads
+
+`GET /device`, `/alarms`, `/hardware/volume`, `/hardware/high-display-color`,
+`/hardware/low-display-color` all return 200 in ~750–1000ms. Only `localkey` is broken.
+
+### `POST /alarms` is CREATE-ONLY — this is the alarm bug
+
+| Call | Result |
+|---|---|
+| `POST /alarms` with `{"id":200,...}` | created **`id: 4`** — body id ignored |
+| `POST /alarms` with `{"id":4,...}` | created a **new `id: 5`**, left 4 untouched |
+| `PUT /alarms/4` with `{"volume":7}` | updated alarm 4 in place, no new alarm |
+| `PUT /alarms` (no id) | 404 |
+
+So the real protocol is:
+
+- `POST /alarms` → create; **the clock assigns the id and ignores yours**
+- `PUT /alarms/{id}` → update in place
+- `DELETE /alarms/{id}` → delete
+
+`POST /alarms` responds with the **entire alarm list**, new alarm inserted **first**, and the
+list is **not sorted by id**.
+
+**Consequence:** the app used `POST` for both create and update (`createOrUpdateAlarm`). Every
+*edit* of an alarm created a duplicate. That is why the probed clock held two byte-identical
+alarms, `id: 2` and `id: 3`, both at 13:15 with identical colour, volume and sound. Fixed by
+splitting `createAlarm` / `updateAlarm` and routing on ids the clock has actually confirmed.
+
+### Active alarms report `status: 10`, not `1`
+
+```json
+{"id":0,"name":"Doppler System Alarm","time_hr":10,"time_min":0,"repeat":"0",
+ "color":{"red":255,"green":0,"blue":0},"volume":100,"status":10,"src":0,
+ "sound":"Harp.mp3","next_trigger":-1}
+```
+
+Every alarm on the device reports `status: 10`. The app modelled only `1 = enabled,
+0 = disabled` and computed `isEnabled = status == 1`, so **every real alarm rendered dimmed
+with its toggle showing off**, and toggling one wrote `1` — a value the device was never
+observed to send. The clock stores `status` verbatim on create (sent 0, got 0 back), so `0` is
+reliably "off" and `10` is "active".
+
+Also note `repeat: ""` (empty string) on one-shot alarms, and `next_trigger: -1`.
+
+### Colour and volume read fine
+
+`GET /hardware/high-display-color` → `{"color":[180,60,255]}`,
+`/hardware/low-display-color` → same, `/hardware/volume` → `{"volume":92}`.
+
+The colour endpoints are an **array** `[r,g,b]`, not an object — do not confuse with the
+alarm `color` field, which is an object `{"red":..,"green":..,"blue":..}`.
 
 ---
 

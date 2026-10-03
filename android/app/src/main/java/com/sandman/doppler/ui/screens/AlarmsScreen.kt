@@ -37,7 +37,8 @@ private data class AlarmDraft(
     val sound: String = "Gentle.mp3",
     val volume: Int = 80,
     val colorPreset: DopplerColor = DopplerColor.CYAN,
-    val status: Int = 1
+    // Real hardware status values, not 1/0. See DopplerAlarm.STATUS_*.
+    val status: Int = DopplerAlarm.STATUS_ACTIVE
 )
 
 private val DAYS_OF_WEEK = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
@@ -604,8 +605,10 @@ private fun AlarmEditDialog(
                     ) {
                         Text("Enable Alarm", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
-                            checked = status == 1,
-                            onCheckedChange = { status = if (it) 1 else 0 },
+                            checked = status != DopplerAlarm.STATUS_DISABLED,
+                            onCheckedChange = {
+                                status = if (it) DopplerAlarm.STATUS_ACTIVE else DopplerAlarm.STATUS_DISABLED
+                            },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Slate950,
                                 checkedTrackColor = Cyan400,

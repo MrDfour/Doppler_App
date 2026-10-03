@@ -31,7 +31,7 @@ class AlarmReconciliationTest {
 
         override suspend fun getAlarms(): List<DopplerAlarm> = clockAlarms
 
-        override suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String {
+        override suspend fun createAlarm(alarm: DopplerAlarm): String {
             writeCount++
             if (echoWritesImmediately) {
                 clockAlarms = clockAlarms.filterNot { it.id == alarm.id } + alarm
@@ -45,52 +45,8 @@ class AlarmReconciliationTest {
         }
     }
 
-    /** The 22-endpoint poll mock from [DopplerRepositoryTest], reused so refresh() succeeds. */
-    private open class MockDopplerLocalApi : com.sandman.doppler.api.DopplerLocalApi(
-        host = "192.168.1.100",
-        port = 5443,
-        dsn = "Doppler-12345678"
-    ) {
-        override suspend fun getDeviceInfo() =
-            com.sandman.doppler.model.DopplerDeviceInfo(
-                mfgrName = "Palo Alto Innovation",
-                modelNum = "SandmanDopplerTest",
-                firmware = "v1.0.0"
-            )
-
-        override suspend fun getWifiStatus() =
-            com.sandman.doppler.model.DopplerWifiStatus(uptime = 3600000L, ssid = "TestNetwork", str = 75)
-
-        override suspend fun getUtcTime() =
-            com.sandman.doppler.model.DopplerUtcTime(hour = 14, min = 30)
-        override suspend fun getTimeMode() = com.sandman.doppler.model.DopplerTimeMode(timeMode = 24)
-        override suspend fun getUseColon() = com.sandman.doppler.model.DopplerUseColon(true)
-        override suspend fun getColonBlink() = com.sandman.doppler.model.DopplerColonBlink(true)
-        override suspend fun getVolume() = com.sandman.doppler.model.DopplerVolume(75)
-        override suspend fun getSoundPreset() = com.sandman.doppler.model.DopplerSoundPreset("Flat")
-        override suspend fun getAscendingVolume() = com.sandman.doppler.model.DopplerAscending(true)
-        override suspend fun getLightSensor() = com.sandman.doppler.model.DopplerLightSensor(100)
-        override suspend fun getDayMode() = com.sandman.doppler.model.DopplerDayMode(true)
-        override suspend fun getHighDisplayColor() = com.sandman.doppler.model.DopplerColor.CYAN
-        override suspend fun getLowDisplayColor() = com.sandman.doppler.model.DopplerColor.DEEP_RED
-        override suspend fun getHighDisplayBrightness() = com.sandman.doppler.model.DopplerBrightness(85)
-        override suspend fun getLowDisplayBrightness() = com.sandman.doppler.model.DopplerBrightness(25)
-        override suspend fun getHighButtonColor() = com.sandman.doppler.model.DopplerColor.CYAN
-        override suspend fun getLowButtonColor() = com.sandman.doppler.model.DopplerColor.DEEP_RED
-        override suspend fun getHighButtonBrightness() = com.sandman.doppler.model.DopplerBrightness(80)
-        override suspend fun getLowButtonBrightness() = com.sandman.doppler.model.DopplerBrightness(20)
-        override suspend fun getSyncButtonDisplayBrightness() = com.sandman.doppler.model.DopplerSync(true)
-        override suspend fun getSyncHighLowColor() = com.sandman.doppler.model.DopplerSync(false)
-        override suspend fun getSyncButtonDisplayColor() = com.sandman.doppler.model.DopplerSync(true)
-        override suspend fun getHighToLowTransition() =
-            com.sandman.doppler.model.DopplerHighToLowTransition(35)
-        override suspend fun getLowToHighTransition() =
-            com.sandman.doppler.model.DopplerLowToHighTransition(45)
-
-        override suspend fun getAlarms(): List<DopplerAlarm> = emptyList()
-
-        override suspend fun getAlarmSounds(): List<String> = emptyList()
-    }
+    /** The 22-endpoint poll mock, shared via [MockPollApi] so refresh() succeeds. */
+    private open class MockDopplerLocalApi : MockPollApi()
 
     private fun alarm(id: Int, hour: Int = 7) = DopplerAlarm(id = id, name = "A$id", time_hr = hour)
 
@@ -171,7 +127,7 @@ class AlarmReconciliationTest {
     @Test
     fun `a failed write does not leave the alarm shielded`(): Unit = runTest {
         val api = object : FakeApi(echoWritesImmediately = false) {
-            override suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String =
+            override suspend fun createAlarm(alarm: DopplerAlarm): String =
                 throw IllegalStateException("clock refused the write")
         }
         val repository = DopplerRepository(api)

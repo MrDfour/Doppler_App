@@ -131,6 +131,12 @@ class DopplerRepository(
 
             // Query alarms
             val clockAlarms = try { localApi.getAlarms() } catch (e: Exception) { emptyList() }
+            // Ground truth for which alarm ids actually exist on the clock. Must be taken
+            // from the raw clock list, never from the merged/optimistic one: a pending
+            // write holds an id the clock has not acknowledged, and treating that as
+            // "exists" would route a create to PUT and silently edit nothing.
+            clockAlarmIds.clear()
+            clockAlarmIds.addAll(clockAlarms.map { it.id })
             // The clock's own list is authoritative, except for alarms we have written and
             // it has not echoed back yet. See mergePendingAlarms.
             val alarms = mergePendingAlarms(clockAlarms)
@@ -410,6 +416,10 @@ class DopplerRepository(
 
     suspend fun addOrUpdateAlarm(alarm: DopplerAlarm) {
         val previousState = _deviceState.value
+        // Decide create-vs-update from the ids the clock has confirmed, not from the id we
+        // picked. POST /alarms is create-only on real hardware, so posting an edit creates
+        // a second alarm instead of changing the first.
+        val existsOnClock = alarm.id in clockAlarmIds
         applyOptimisticUpdate { current ->
             if (current == null) null
             else {
@@ -418,15 +428,69 @@ class DopplerRepository(
             }
         }
         try {
-            localApi.createOrUpdateAlarm(alarm)
-            // Hold on to this copy until the clock's own list confirms it. See
-            // mergePendingAlarms for why the read-back cannot be trusted immediately.
-            pendingAlarmWrites[alarm.id] = PendingAlarm(alarm, System.currentTimeMillis())
+            if (existsOnClock) {
+                localApi.updateAlarm(alarm)
+                // Hold on to this copy until the clock's own list confirms it. See
+                // mergePendingAlarms for why the read-back cannot be trusted immediately.
+                pendingAlarmWrites[alarm.id] = PendingAlarm(alarm, System.currentTimeMillis())
+            } else {
+                // A create gets an id of the clock's choosing, not ours. The optimistic entry
+                // we just showed carries our invented id, which will never match anything the
+                // clock reports - so the alarm the user is looking at would vanish and
+                // reappear under a different id one poll later.
+                createAlarmAndAdopt(alarm)
+            }
             refresh()
         } catch (e: Exception) {
             pendingAlarmWrites.remove(alarm.id)
             _deviceState.value = previousState
             throw e
+        }
+    }
+
+    /**
+     * Create an alarm and shield it under the id the clock actually assigned.
+     *
+     * `POST /alarms` ignores the id in the body and assigns its own sequential one - proven
+     * on hardware: POSTing `id: 200` came back as `id: 4`. It also returns the *entire* alarm
+     * list. Since a create adds exactly one id, the set difference between the list before
+     * and the list in the response identifies the new alarm unambiguously.
+     *
+     * Deliberately not matched by content: the clock this was found on holds two alarms that
+     * are byte-identical apart from id (both 13:15, same colour, volume and sound), so any
+     * content match can adopt the wrong one and silently move a user's alarm onto a
+     * different alarm's identity.
+     */
+    private suspend fun createAlarmAndAdopt(alarm: DopplerAlarm) {
+        val idsBefore = clockAlarmIds.toSet()
+        val response = localApi.createAlarm(alarm)
+
+        val idsAfter = try {
+            json.decodeFromString<DopplerAlarmsResponse>(response).alarms.map { it.id }.toSet()
+        } catch (e: Exception) {
+            emptySet()
+        }
+        val assigned = (idsAfter - idsBefore).singleOrNull()
+
+        if (assigned != null) {
+            pendingAlarmWrites[assigned] =
+                PendingAlarm(alarm.copy(id = assigned), System.currentTimeMillis())
+            return
+        }
+
+        // The response was not a usable list, or the write has not landed yet. Poll, then
+        // take whichever single id is new. Falling back to our own invented id would show
+        // an alarm under an id the clock never issued, which is the original bug.
+        refresh()
+        val afterPoll = clockAlarmIds - idsBefore
+        val assignedByPoll = afterPoll.singleOrNull()
+        if (assignedByPoll != null) {
+            pendingAlarmWrites[assignedByPoll] =
+                PendingAlarm(alarm.copy(id = assignedByPoll), System.currentTimeMillis())
+        } else {
+            // Clock has not reported it. Keep the write pending under our id; the grace
+            // timer in mergePendingAlarms retires it rather than dropping it silently.
+            pendingAlarmWrites[alarm.id] = PendingAlarm(alarm, System.currentTimeMillis())
         }
     }
 
@@ -451,6 +515,16 @@ class DopplerRepository(
     private data class PendingAlarm(val alarm: DopplerAlarm, val writtenAt: Long)
 
     private val pendingAlarmWrites = ConcurrentHashMap<Int, PendingAlarm>()
+
+    /**
+     * Alarm ids the clock has actually confirmed, rebuilt from the raw list on every poll.
+     *
+     * This is what decides create-vs-update. The id the app picks client-side
+     * (`AlarmsScreen.nextId`) is *not* an identity the clock honours: `POST /alarms`
+     * assigns its own sequential id and ignores ours. Routing on that invented id is what
+     * made edits create duplicate alarms.
+     */
+    private val clockAlarmIds = ConcurrentHashMap.newKeySet<Int>()
 
     /**
      * Reconciles the clock's alarm list with alarms we have written but it has not echoed.

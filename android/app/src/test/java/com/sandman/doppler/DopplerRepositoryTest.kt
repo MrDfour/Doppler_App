@@ -290,7 +290,7 @@ class DopplerRepositoryTest {
         }
         override suspend fun displayText(text: String, duration: Int, speed: Int, color: DopplerColor): String = "OK"
         override suspend fun displaySmallDigits(number: Int, duration: Int, color: DopplerColor): String = "OK"
-        override suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String = "OK"
+        override suspend fun createAlarm(alarm: DopplerAlarm): String = "OK"
         override suspend fun deleteAlarm(alarmId: Int): String = "OK"
         override suspend fun playAlarmSound(sound: String): String = "OK"
     }
