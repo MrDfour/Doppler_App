@@ -97,7 +97,7 @@ which endpoints are read-only.
 |---|---|---|---|
 | `device` | `{"mfgrName":…,"modelNum":…,"serialNum":…,"firmware":"Escapement","hardware":"Enter Sandman","software":"0.1214 Bucky"}` | matches | ok |
 | `doptime/utc-time` | `{"hour":20,"min":37}` | matches | ok |
-| `doptime/timezone` | `{"timezone":"Canada/Saskatchewan"}` | matches | ok |
+| `doptime/timezone` | `{"timezone":"Canada/Saskatchewan"}` (as shipped) | matches | ok — **now `America/Chihuahua`**, see below |
 | `doptime/offset` | `{"offset":0}` | matches | ok |
 | `software/time-mode` | `{"timeMode":12}` | matches | ok |
 | `hardware/volume` | `{"volume":92}` | matches | ok |
@@ -113,11 +113,26 @@ which endpoints are read-only.
 | all four `*-brightness` | `{"brightness":N}` | matches | ok |
 | all four `*-color` | `{"color":[r,g,b]}` | matches | ok |
 | all three `*-sync-*` | `{"sync":bool}` | matches | ok |
-| `software/weather` | `{"wsonoff":true,"location":"78852","wsmode":2}` | matches | ok — see "Weather works outside the US" below |
-| `software/weather-wakeup-time` | `{"weatherwakeuptime":"10:00"}` | matches | ok |
+| `software/weather` | `{"wsonoff":true,"location":"78852","wsmode":2}` as found | matches | ok — **now `"27.1258,-104.9118"`**, see "Weather works outside the US" below |
+| `software/weather-wakeup-time` | `{"weatherwakeuptime":"10:00"}` | matches | ok — **currently `16:05`** |
 | `alexa/lwa-status` | `{"status":false,"timestamp":254}` | — | ok |
 | `alexa/tap-talk-tone` | `{"tone":true}` | — | ok |
 | `alexa/wake-word-tone` | `{"tone":true}` | — | ok |
+
+**READS — 6 are permanently broken (HTTP 408, ~15s each, 2/2 retries):**
+`hardware/wifi-status`, `software/use-colon`, `software/colon-blink`,
+`software/use-leading-zero`, `software/use-fade-time`, `software/display-seconds`.
+
+These are 6 of the **25 endpoints in a poll cycle**, serialized through the request gate at
+~15s apiece — roughly **90 seconds of dead time per poll**. This is almost certainly the
+dominant remaining latency term, and it is a *server-side* fault we cannot fix from the app.
+Note `software/use-colon` **accepts writes** (PUT → 200 in 406ms) while its GET always times
+out: the app can set the colon but never read it back, and pays 15s every poll trying.
+
+> **These six are not reliably dead — see open issue 7.** They were classified from repeated
+> probes, but a later sweep found `software/weather` 408 then 200 on consecutive calls and
+> `software/use-colon` 408 at 15 s *in the same sweep that succeeded elsewhere*. A 408 is a
+> statement about one request, not about the route.
 
 ### Weather works outside the US — the official app's ZIP box is a UI limit
 
@@ -163,6 +178,12 @@ Modes 1–12 **resolve worldwide**; 13–17 are **US-only** and cannot resolve a
 Modes 2 and 14 are the same statistic and unit differing only in provider — so 14 in Mexico
 cannot work, while 2 can.
 
+> **The US-only claim for 13–17 is read from `doppyler` source, not measured.** Only mode 2 has
+> been confirmed on this unit. Nobody has sent `wsmode=13..17` with `location` set to
+> `27.1258,-104.9118` and observed the failure. The `WeatherMode` picker labels those modes as
+> US-only on the strength of that inference, which is a weaker claim than every other row in
+> this table. See open issue 7.
+
 **`weatherwakeuptime` is a forecast announcement alarm, not a refresh interval.** The clock
 updates its temperature and icon as soon as new data reaches it; this time is when it *speaks*
 the forecast (confirmed by the owner from direct observation of the official app). Consequence:
@@ -193,16 +214,6 @@ Both return *all* candidates rather than guessing, because `"Jimenez"` alone mat
 places across Mexico, Spain, the Philippines and Costa Rica. Note Open-Meteo also returns two
 Jiménez entries for `Jimenez, Chihuahua, Mexico` — the **municipality centroid (28.333, −105.4)
 and the town (27.117, −104.95)**, ~135 km apart, so picking the wrong one gives wrong weather.
-
-**READS — 6 are permanently broken (HTTP 408, ~15s each, 2/2 retries):**
-`hardware/wifi-status`, `software/use-colon`, `software/colon-blink`,
-`software/use-leading-zero`, `software/use-fade-time`, `software/display-seconds`.
-
-These are 6 of the **25 endpoints in a poll cycle**, serialized through the request gate at
-~15s apiece — roughly **90 seconds of dead time per poll**. This is almost certainly the
-dominant remaining latency term, and it is a *server-side* fault we cannot fix from the app.
-Note `software/use-colon` **accepts writes** (PUT → 200 in 406ms) while its GET always times
-out: the app can set the colon but never read it back, and pays 15s every poll trying.
 
 **WRITES — read-only, HTTP 500 on any body (correct or invented):**
 `hardware/sound-preset`, `hardware/sound-preset-mode`, `hardware/day-mode`,
@@ -362,7 +373,9 @@ All hardware commands go to `https://control.sandmandoppler.com/{dsn}/...`:
 
 ### Cost of serialization
 
-Serializing is not free: a poll cycle is now the sum of 22 round-trips. On a slow link that can exceed the poll interval, so the poll is effectively always running. Priority ordering keeps the user responsive, but if latency stays high, the fix is to trim the poll (fewer endpoints, adaptive interval, or skip reads while the user is actively dragging) — not to weaken the gate.
+Serializing is not free: a poll cycle is now the sum of 25 round-trips. On a slow link that can exceed the poll interval, so the poll is effectively always running. Priority ordering keeps the user responsive, but if latency stays high, the fix is to trim the poll (fewer endpoints, adaptive interval, or skip reads while the user is actively dragging) — not to weaken the gate.
+
+**This is now partly paid down.** The six permanently-408 paths are skipped by `EndpointCapabilities` (commit `417ca63`), which removes ~90 s from every cycle and takes the sweep from 25 attempted requests to 19. Callers get `DopplerException.UnavailableException` rather than a fabricated default, and the set is published as `DopplerDeviceState.unavailableEndpoints` so the UI says "unavailable" instead of "zero". See open issue 2 for why the "permanently" part is not yet earned.
 
 **Not every socket goes through the gate.** `LocationResolver` calls Open-Meteo and Nominatim — unrelated third-party internet hosts that never touch the hardware. Serializing those behind the clock gate would make a place lookup wait on a poll sweep for no benefit. The invariant protects the *hardware* from concurrent requests, not every network call in the app.
 
@@ -378,59 +391,114 @@ Serializing is not free: a poll cycle is now the sum of 22 round-trips. On a slo
 
 A `PUT` to `hardware/display-text` returning 2xx tells you the *route exists*. It does not tell you the firmware implements the override, nor that the cloud relay forwarded it. Observed in practice: probe returned 2xx, no text appeared. Treat `ACCEPTED_UNVERIFIED` as "worth trying", not "works".
 
-## Read This First: Repo State (as of commit `1b1e03c`)
+## Read This First: Repo State (as of commit `c7d5b17`)
 
-`main` is clean and synced with `origin`. Test suite: **46 tests across 5 suites**, all green
-(`DopplerProtocolTest` 8, `DopplerRepositoryTest` 9, `DragCommitGateTest` 4,
-`OverrideSupportProbeTest` 11, `RequestSerializationTest` 14).
+`main` is clean and **synced with `origin`** (`git rev-list --left-right --count origin/main...HEAD`
+→ `0 0`). Test suite: **174 tests across 17 suites**, all green, 0 skipped, 0 failures.
 
-**Verified by automated tests:** request serialization and priority ordering, probe verdict
-taxonomy, optimistic-update rollback, drag coalescing, protocol/payload shapes.
+This section used to claim "46 tests across 5 suites" and "every cloud path in this doc is
+unverified against a live clock". Both are now false — the doc was 4 commits and 128 tests
+behind. Read the findings sections above before trusting any "still open" label.
 
-**NOT verified — needs a human on real hardware.** Do not report these as done:
+**Verified against the real clock (hardware, `Doppler-10caaebb`):**
 
-- **The 10–20 s action lag fix has never been measured end-to-end.** `RequestGate` is
-  unit-tested for *ordering*, not duration. The cause was finally identified as the 30s cloud
-  read timeout plus a token-refresh storm (see the Cloud Latency section), both now fixed and
-  unit-tested against MockWebServer — but **nobody has confirmed the device feels fixed.**
-  If it persists, read the Diagnostics latency card before theorising.
-- **The override probe has never produced a real verdict from the clock.** Nobody has run it
-  against hardware and reported what `hardware/display-text` and
-  `hardware/small-display-digits` actually returned.
-- **Every cloud path in this doc is unverified against a live clock.** All of it is derived
-  from `doppyler` source, a Postman collection, and the user's field reports.
+- Weather end to end. `location="27.1258,-104.9118"`, `wsmode=2`, `wsonoff=true` → display
+  showed 20° and cloudy, matching Open-Meteo's 19.5 °C daily max / WMO 3. Icon changed from the
+  previous Seguin reading, so this is genuine data.
+- Timezone write and read-back: `Canada/Saskatchewan` → `America/Chihuahua`, HTTP 200.
+- `POST /alarms` is create-only; editing an alarm duplicates it.
+- Active alarms report `status: 10`, not `1`.
+- LAN is unusable: `192.168.11.107` answers ICMP, no open TCP port, no 5443.
+- The endpoint access matrix above (30 working reads, 4 read-only writes, 3 one-shot
+  overrides, 6 dead reads), including the six wire-schema fixes.
+- `location` accepts arbitrary free-form text and validates nothing.
+
+**Verified by automated tests only:**
+
+- The entire **Weather screen**, the **colour picker UI**, and the **Diagnostics card**. These
+  have never been opened by a human on the device. `LocationResolver`, `WeatherMode`,
+  `ClockTime`, `PlaceCandidate` and the weather repository writes are unit-tested against
+  recorded payloads and mock clocks.
+- `wireName`/`WireSchemaTest` pins every wire field against a verbatim live payload.
+- `RequestSerializationTest` (max concurrent == 1, priority ordering), probe verdict taxonomy,
+  optimistic rollback, drag coalescing, the 408/unavailable-endpoint path.
+
+**NOT verified — needs a human on real hardware. Do not report these as done:**
+
+- **The 10–20 s action lag fix has still never been measured end-to-end.** `RequestGate` is
+  unit-tested for *ordering*, not duration. Root cause was identified as the 30 s cloud read
+  timeout plus a token-refresh storm, both fixed and unit-tested against MockWebServer — but
+  nobody has confirmed the device feels fixed. If it persists, read the Diagnostics latency
+  card before theorising.
+- **The two display overrides were never observed rendering.** `hardware/display-text`,
+  `hardware/small-display-digits` and `hardware/display-dots` return 200 to PUT and 404 to GET.
+  `ACCEPTED_UNVERIFIED` is the honest ceiling and only the clock face can raise it.
+- **The clock's on-device duplicate alarms still need deleting** (`id: 2` and `id: 3`, both
+  13:15, created by the create-only POST bug). The app is fixed; the data is not.
 
 ## Open Issues — Do Not Assume Any of These Are Fixed
 
-1. **Poll cost.** `refresh()` is 25 sequential GETs, so one poll cycle is the *sum* of 25
-   round-trips. On a slow link that exceeds the poll interval and the poller is effectively
-   always running. `startPolling` now yields `max(interval, elapsed)` to guarantee an idle
-   gap, and per-call deadlines stop a stall from blocking the user, but total load is
-   unchanged. **This is the most likely remaining cause if latency persists.** Next lever:
-   skip reads while the user is actively dragging, or make the interval adaptive.
+Resolved since the last revision of this list, struck so they stop being re-investigated:
+**custom colours** (commit `d0beadf` added `ColorSelector` with a free-form dialog alongside
+the 5 presets — the reported bug was never diagnosed, the capability simply did not exist), and
+**the `DragCommitGate` KDoc** (rewritten; it no longer claims "at most once per window", and the
+implementation is unchanged trailing-edge, which the new text now describes accurately), and
+**alarm write path regression from c9e62e8** (conditional `refresh()` at start of
+`addOrUpdateAlarm()` ensures `clockAlarmIds` is fresh before create-vs-update routing
+decision, preventing duplicate alarms from POST-creating instead of PUT-updating);
+this fix was verified with 6/6 `AlarmWriteProtocolTest` tests and full suite green).
+
+1. **Poll cost — partly paid down.** `refresh()` attempted 25 sequential GETs; the six dead
+   paths are now skipped, so a cycle is ~19 requests and ~90 s shorter. Total load is still high
+   and the interval is still fixed. `startPolling` yields `max(interval, elapsed)` to guarantee
+   an idle gap, and per-call deadlines stop a stall from blocking the user. Next lever: skip
+   reads while the user is actively dragging, or make the interval adaptive.
    **Do not weaken the gate to fix this.**
-2. **Drafts are dropped on the optimistic echo, not on hardware confirmation.**
-   `DashboardScreen.kt:41-43` and `DisplayLightingScreen.kt:65-69` clear the local draft as
-   soon as the repository's *own optimistic value* comes back. That is self-confirmation: it
-   proves nothing about the clock. A rejected or clamped write therefore clears the draft and
-   the UI shows the optimistic value until the next poll corrects it. Proper fix is to clear
-   the draft when `confirmHardware` reports the real stored value. Note only volume uses
-   `confirmHardware` today (`DopplerRepository.kt:212`); the 6 brightness/threshold sliders do not.
-3. **`confirmHardware` covers one endpoint.** Volume only. The 6 brightness/threshold writes and
+2. **`EndpointCapabilities` will disable working features.** This is the most serious open
+   item. The six seeded paths are hard-coded as "never return" from repeated probes, but a
+   later sweep caught `software/weather` 408-then-200 on consecutive calls and
+   `software/use-colon` 408 at 15 s *in a sweep where other paths succeeded*. A 408 is evidence
+   about one request, not about a route. The failure is now runtime-learned as well: two
+   give-ups committed by `endPollCycle(healthy)` add a path to `unavailable`, and only a
+   user-triggered `recheckAll()` ever clears it. So a feature can be switched off permanently by
+   two unlucky polls and stay off. **Do not widen the seed set.** Fixing this properly needs a
+   sweep that records status and timing per path across many cycles, then a model that
+   distinguishes intermittent from absent.
+3. **404 is discarded, and 404 is the strongest evidence available.** A nonexistent route
+   answers `404 "No mapping for HTTP-method"` in ~240 ms — instant, unambiguous, and proof the
+   route does not exist on this model. A stalled handler answers `408 "No response from
+   Doppler"` at ~15 s. The two are cleanly separable and `isEndpointGiveUp` recognises **only
+   the 408**. That is the safe direction for not disabling features, but it means the one
+   unambiguous signal of absence is unused, and intermittent 408s are indistinguishable from
+   absence. Related: the six real 404s on this model (`software/colon`,
+   `software/nightlight-color`, bare `doptime`, `software/display-order`,
+   `software/temperature-unit`) are recorded in this doc but not in the code.
+4. **Drafts are dropped on the optimistic echo, not on hardware confirmation.**
+   `DashboardScreen.kt` and `DisplayLightingScreen.kt` clear the local draft as soon as the
+   repository's *own optimistic value* comes back. That is self-confirmation: it proves nothing
+   about the clock. A rejected or clamped write therefore clears the draft and the UI shows the
+   optimistic value until the next poll corrects it. Proper fix is to clear the draft when
+   `confirmHardware` reports the real stored value.
+5. **`confirmHardware` covers one endpoint.** Volume only. The 6 brightness/threshold writes and
    the 4 colour writes all echo the optimistic value and never read back, so firmware clamping
-   is invisible on all of them.
-4. **Custom colours are unimplemented.** The app ships 5 hardcoded presets in `DopplerColor`
-   and no picker. The user reported this as a bug (issue #3) and the cause was never
-   established — it may simply never have been built. Ask before assuming.
-5. **`CLAUDE.md` is stale.** Line 35 describes `DopplerLocalApi` as "Mutex-serialized"; it is
-   now `RequestGate`. `CLAUDE.md` §4 also credits `DopplerRepository` with owning the lock —
-   the lock actually lives in the api layer, and `repository/` contains only
-   `DopplerRepository.kt`.
-6. **`DragCommitGate` KDoc lies.** `DragCommitGate.kt:19` claims "at most once per window while
-   the user keeps dragging, so the hardware still feels live." The impl (`DragCommitGate.kt:36-42`)
-   is trailing-edge only: a continuous 10-second drag produces exactly **one** commit, at the
-   end. Either fix the doc or implement mid-drag commits — but see the warning below before
-   adding mid-drag commits.
+   is invisible on all of them. Open sub-question: PUT an out-of-range brightness, then GET it,
+   to find out whether the firmware clamps at all.
+6. **`CLAUDE.md` is stale.** Line 35 describes `DopplerLocalApi` as "Mutex-serialized"; it is
+   now `RequestGate`, and the word `RequestGate` does not appear in the file at all. The repo
+   layout also omits `api/LocationResolver.kt`, `model/WeatherMode.kt`,
+   `model/PlaceCandidate.kt`, `model/ClockTime.kt`, `storage/WeatherPlaceStore.kt`,
+   `api/EndpointCapabilities.kt`, `ui/screens/WeatherScreen.kt` and `ColorSelector.kt`.
+   AGENTS.md rule 5 describes the lock as a coroutine `Mutex` too.
+7. **`wsmode` 13–17 US-only is inferred, never measured.** See the note in the weather section.
+   One probe with `location="27.1258,-104.9118"` and modes 13, 14, 15, 16, 17 would either
+   confirm the label or expose that the NWS provider resolves Mexico fine, which would change
+   which modes the picker offers.
+8. **`weatherwakeuptime` is `16:05`, chosen while probing, not chosen.** With `wsmode=2` (daily
+   high) an evening announcement is right; the value was never discussed with the owner.
+   Restore `10:00` or confirm the evening slot.
+9. **Cloud-vs-LAN precedence in `buildApi()` is untouched and unexamined.** Deliberately left
+   alone, listed so nobody assumes it was decided.
+
 
 ## The UI Write Path — Do Not "Simplify" This Away
 
@@ -450,9 +518,9 @@ failing. That is why "the sliders feel great" and "the change takes 20 s to reac
 can both be true at once. Do not diagnose slider lag as a UI problem — check where the write
 actually sits in `RequestGate`.
 
-**Adding mid-drag commits** (fixing issue 6) would multiply writes during a drag and compete
-with the poll. If you do it, keep them at `RequestGate.Priority.INTERACTIVE` and expect to
-revisit the poll-trimming work above.
+**Adding mid-drag commits** is deliberately *not* done. It would multiply writes during a drag
+and compete with the poll. If you implement it, keep them at `RequestGate.Priority.INTERACTIVE`
+and expect to revisit the poll-trimming work above.
 
 ## Failure Modes Learned Here — Generalize These
 
@@ -470,7 +538,17 @@ revisit the poll-trimming work above.
   rendered that as "no HTTP response". Reporting the *range* ("HTTP 2xx") is honest; fabricating
   `200` is not.
 - **Optimistic UI + eager confirmation can hide failures.** An echo of your own optimistic value
-  looks identical to hardware confirmation. See open issue 2.
+  looks identical to hardware confirmation. See open issue 4.
+- **"Times out" is not a property of an endpoint, it is a property of a request.** Six paths
+  were seeded as permanently dead and the app now refuses to poll them at all — but a later
+  sweep found `software/weather` 408-then-200 on consecutive calls. Treating an observed
+  failure as an observed *fact* about the route is the same error as inferring a 2xx means the
+  firmware did something, just in the pessimistic direction. Sample repeatedly before you
+  convert an observation into a permanent skip.
+- **404 and 408 are different facts.** `404 "No mapping for HTTP-method"` in ~240 ms means the
+  route does not exist. `408 "No response from Doppler"` at ~15 s means a handler accepted the
+  connection and produced nothing. Treating both as "not supported" loses the one signal that
+  is actually conclusive.
 - **When you regress something, lead with the root cause and the fix**, not a reassurance. The
   lag regression was reported after a commit that claimed to fix jitter; the honest answer was
   "that was mine, here is exactly why, here is the test that pins it."
@@ -513,7 +591,7 @@ Both must exit 0. Test counts are readable from
   wrapped in `withTimeout`, because a leaked lock would otherwise hang the suite instead of
   failing it.
 - Prefer centralizing a rule over applying it by hand. The 34 getters were routed through
-  one `executePollRequest(path)` helper specifically because hand-tagging 22 call sites is how
+  one `executePollRequest(path)` helper specifically because hand-tagging 34 call sites is how
   one gets missed.
 
 ## File Map — Where Things Live
@@ -523,13 +601,15 @@ Both must exit 0. Test counts are readable from
 | `api/DopplerLocalApi.kt` | LAN transport, 67 endpoint methods, owns `requestGate` |
 | `api/DopplerCloudApi.kt` | Cloud transport; overrides `executeAuthenticatedRequest` + `buildUrl` |
 | `api/RequestGate.kt` | Priority gate. Read the KDoc before touching concurrency |
+| `api/EndpointCapabilities.kt` | Skips read paths measured as never answering. **Suspect — see open issue 2** |
 | `api/RequestTelemetry.kt` | Last-64 request durations/outcomes. **Check Diagnostics before diagnosing latency** |
 | `api/LocalTokenManager.kt` | Nonce/`localKey` Bearer derivation, has its own separate mutex |
 | `repository/DopplerRepository.kt` | The 25-request `refresh()` poll, optimistic updates, `probeOverrideSupport()` |
 | `viewmodel/DopplerViewModel.kt` | UI state, poll interval (8000 ms) |
 | `ui/DragCommitGate.kt` | Trailing-edge write coalescing (250 ms) |
 | `ui/screens/DiagnosticsScreen.kt` | Transport/link reporting, override probe card, `OverrideVerdict.color()` |
-| `model/DopplerModels.kt` | Wire models, `OverrideProbeResult`, `OverrideVerdict`, `DopplerColor` (5 presets) |
+| `model/DopplerModels.kt` | Wire models, `OverrideProbeResult`, `OverrideVerdict`, `DopplerColor` (5 presets + `fromHexOrNull`) |
+| `ui/screens/ColorSelector.kt` | Preset swatches plus a free-form hex dialog (commit `d0beadf`) |
 | `api/LocationResolver.kt` | Typed place name / postal code → coordinates. Open-Meteo for text, Nominatim for numeric |
 | `model/WeatherMode.kt` | The `wsmode` decode: provider + statistic + unit, with plain-language labels |
 | `model/PlaceCandidate.kt` | A resolved place; `coordinateString` is **what actually reaches the clock** |

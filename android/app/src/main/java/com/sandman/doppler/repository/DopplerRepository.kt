@@ -590,10 +590,17 @@ class DopplerRepository(
 
     suspend fun addOrUpdateAlarm(alarm: DopplerAlarm) {
         val previousState = _deviceState.value
+        // Ensure clockAlarmIds is populated with current clock alarm IDs before the
+        // create-vs-update routing decision. A stale clockAlarmIds (from a previous
+        // refresh that happened before the UI action) caused every alarm operation to
+        // route through POST (create) instead of PUT (update), silently creating
+        // duplicate alarms - the regression fixed by c9e62e8. Only refresh if the set is
+        // empty, to avoid unnecessary latency when a recent refresh already provides
+        // fresh data.
+        if (clockAlarmIds.isEmpty()) refresh()
         // Decide create-vs-update from the ids the clock has confirmed, not from the id we
         // picked. POST /alarms is create-only on real hardware, so posting an edit creates
         // a second alarm instead of changing the first.
-        val existsOnClock = alarm.id in clockAlarmIds
         applyOptimisticUpdate { current ->
             if (current == null) null
             else {
@@ -602,7 +609,7 @@ class DopplerRepository(
             }
         }
         try {
-            if (existsOnClock) {
+            if (alarm.id in clockAlarmIds) {
                 localApi.updateAlarm(alarm)
                 // Hold on to this copy until the clock's own list confirms it. See
                 // mergePendingAlarms for why the read-back cannot be trusted immediately.
@@ -614,6 +621,9 @@ class DopplerRepository(
                 // reappear under a different id one poll later.
                 createAlarmAndAdopt(alarm)
             }
+            // Refresh the device state after the alarm write so the UI reflects the
+            // clock's current alarm list (the clock's GET /alarms does not include freshly
+            // written alarms immediately). The clock's own list is authoritative.
             refresh()
         } catch (e: Exception) {
             pendingAlarmWrites.remove(alarm.id)
