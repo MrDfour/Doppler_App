@@ -537,6 +537,11 @@ private fun CloudLoginTab(
                         if (!thing.ipAddie.isNullOrEmpty()) {
                             Text(text = "IP: ${thing.ipAddie}", color = Slate400, fontSize = 12.sp)
                         }
+                        if (thing.lastSeen != null) {
+                            val lastSeenText = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+                                .format(java.util.Date(thing.lastSeen))
+                            Text(text = "Last seen: $lastSeenText", color = Slate400, fontSize = 12.sp)
+                        }
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Slate400)
                 }

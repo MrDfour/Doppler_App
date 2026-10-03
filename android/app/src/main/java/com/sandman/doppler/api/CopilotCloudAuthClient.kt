@@ -51,7 +51,8 @@ data class CloudThingItem(
     val name: String? = null,
     val modelNum: String? = null,
     val firmware: String? = null,
-    val ipAddie: String? = null
+    val ipAddie: String? = null,
+    val lastSeen: Long? = null
 )
 
 // Shape of a single item in the real /v4/things response:
@@ -65,9 +66,15 @@ data class CloudThingInfo(
 )
 
 @Serializable
+data class CloudThingStatus(
+    val lastSeen: Long? = null
+)
+
+@Serializable
 data class CloudThingApiItem(
     val id: String? = null,
     val info: CloudThingInfo? = null,
+    val status: CloudThingStatus? = null,
     // Older/alternate shapes may surface these fields directly
     val dsn: String? = null,
     val name: String? = null,
@@ -86,7 +93,8 @@ private fun CloudThingApiItem.toThingItem(): CloudThingItem? {
         name = name ?: info?.name,
         modelNum = modelNum ?: info?.model,
         firmware = firmware ?: info?.firmware,
-        ipAddie = ipAddie
+        ipAddie = ipAddie,
+        lastSeen = status?.lastSeen
     )
 }
 
