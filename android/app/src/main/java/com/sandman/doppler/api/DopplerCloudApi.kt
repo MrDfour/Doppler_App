@@ -24,7 +24,8 @@ class DopplerCloudApi(
     host: String = "control.sandmandoppler.com",
     port: Int = 443,
     dsn: String,
-    private val cloudAccessToken: String,
+    private var cloudAccessToken: String,
+    private val refreshTokenProvider: (suspend () -> String?)? = null,
     customClient: OkHttpClient? = null
 ) : DopplerLocalApi(
     host = host,
@@ -65,12 +66,22 @@ class DopplerCloudApi(
         }
 
         val client = getHttpClientForCloud()
-        val response = try {
+        var response = try {
             client.newCall(reqBuilder.build()).execute()
         } catch (e: IOException) {
             throw DopplerException.LocalConnectionException(
                 "Failed to reach cloud control endpoint for $dsn", e
             )
+        }
+        // Access token may have expired: try one token refresh + retry on 401.
+        if (response.code == 401 && refreshTokenProvider != null) {
+            response.close()
+            val fresh = refreshTokenProvider()
+            if (!fresh.isNullOrBlank()) {
+                cloudAccessToken = fresh
+                reqBuilder.header("Authorization", "Bearer $fresh")
+                response = client.newCall(reqBuilder.build()).execute()
+            }
         }
         response.use { resp ->
             if (!resp.isSuccessful) {

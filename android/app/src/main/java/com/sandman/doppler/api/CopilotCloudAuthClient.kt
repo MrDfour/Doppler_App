@@ -144,7 +144,7 @@ class CopilotCloudAuthClient(
      * Authenticate with Sandman Doppler PAI Cloud account.
      * Runs on IO dispatcher for network safety.
      */
-    suspend fun login(email: String, pass: String): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun login(email: String, pass: String): Result<CloudLoginResponse> = withContext(Dispatchers.IO) {
         try {
             val tz = java.util.TimeZone.getDefault()
             val reqBody = json.encodeToString(
@@ -183,7 +183,28 @@ class CopilotCloudAuthClient(
                 val bodyStr = response.body?.string()
                     ?: return@withContext Result.failure(IOException("Empty response"))
                 val loginRes = json.decodeFromString<CloudLoginResponse>(bodyStr)
-                Result.success(loginRes.accessToken)
+                Result.success(loginRes)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshAccessToken(refreshToken: String): Result<CloudLoginResponse> = withContext(Dispatchers.IO) {
+        try {
+            val body = """{"refreshToken":"$refreshToken"}"""
+                .toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("$BASE_AUTH_URL/v4/auth/refresh")
+                .put(body)
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("Token refresh failed: HTTP ${response.code}"))
+                }
+                val bodyStr = response.body?.string()
+                    ?: return@withContext Result.failure(IOException("Empty response"))
+                Result.success(json.decodeFromString<CloudLoginResponse>(bodyStr))
             }
         } catch (e: Exception) {
             Result.failure(e)
@@ -299,7 +320,7 @@ class CopilotCloudAuthClient(
                 return Result.failure(loginResult.exceptionOrNull()
                     ?: IOException("Cloud login failed"))
             }
-            accessToken = loginResult.getOrNull()!!
+            accessToken = loginResult.getOrNull()!!.accessToken
 
             // Step 2: Fetch device list
             val thingsResult = fetchThings(accessToken)

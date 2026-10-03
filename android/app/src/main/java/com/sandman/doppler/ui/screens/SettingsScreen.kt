@@ -420,7 +420,7 @@ private fun CloudLoginTab(
                         val client = CopilotCloudAuthClient()
                         val loginResult = client.login(email, password)
                         if (loginResult.isSuccess) {
-                            val token = loginResult.getOrNull()!!
+                            val token = loginResult.getOrNull()!!.accessToken
                             val thingsResult = client.fetchThings(token)
                             if (thingsResult.isSuccess) {
                                 val things = thingsResult.getOrNull()!!
@@ -495,10 +495,11 @@ private fun CloudLoginTab(
                         val client = CopilotCloudAuthClient()
                         val loginRes = client.login(email, password)
                         if (loginRes.isSuccess) {
-                            val token = loginRes.getOrNull()!!
+                            val token = loginRes.getOrNull()!!.accessToken
                             // Persist the cloud token immediately so the app can fall back
                             // to the cloud control plane even when the LAN daemon (localkey) is unavailable.
                             tokenStore.cloudAccessToken = token
+                            tokenStore.cloudRefreshToken = loginRes.getOrNull()?.refreshToken
                             tokenStore.savedDsn = thing.dsn
                             tokenStore.deviceFriendlyName = thing.name ?: "Sandman Doppler"
                             val keyRes = client.fetchLocalKey(thing.dsn, token)

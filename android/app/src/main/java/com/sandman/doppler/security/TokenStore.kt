@@ -53,6 +53,11 @@ class TokenStore(context: Context) {
         get() = prefs.getString(KEY_CLOUD_TOKEN, null)
         set(value) = prefs.edit().putString(KEY_CLOUD_TOKEN, value).apply()
 
+    /** Cached Copilot refresh token used to renew [cloudAccessToken] when it expires. */
+    var cloudRefreshToken: String?
+        get() = prefs.getString(KEY_CLOUD_REFRESH_TOKEN, null)
+        set(value) = prefs.edit().putString(KEY_CLOUD_REFRESH_TOKEN, value).apply()
+
     /**
      * Alias for authToken — provides semantic clarity when storing/reading the Doppler local key.
      * The localKey is the cryptographic secret used for SHA-256 token derivation.
@@ -89,5 +94,6 @@ class TokenStore(context: Context) {
         private const val KEY_DSN = "doppler_dsn"
         private const val KEY_FRIENDLY_NAME = "doppler_friendly_name"
         private const val KEY_CLOUD_TOKEN = "doppler_cloud_token"
+        private const val KEY_CLOUD_REFRESH_TOKEN = "doppler_cloud_refresh_token"
     }
 }

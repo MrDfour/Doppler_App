@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.sandman.doppler.api.CopilotCloudAuthClient
 import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.repository.DopplerRepository
@@ -37,7 +38,17 @@ class MainActivity : ComponentActivity() {
         return if (!store.cloudAccessToken.isNullOrBlank()) {
             DopplerCloudApi(
                 dsn = dsn,
-                cloudAccessToken = store.cloudAccessToken!!
+                cloudAccessToken = store.cloudAccessToken!!,
+                refreshTokenProvider = {
+                    val refresh = store.cloudRefreshToken
+                    if (refresh.isNullOrBlank()) return@DopplerCloudApi null
+                    val result = CopilotCloudAuthClient().refreshAccessToken(refresh)
+                    if (result.isSuccess) {
+                        store.cloudAccessToken = result.getOrNull()?.accessToken
+                        store.cloudRefreshToken = result.getOrNull()?.refreshToken
+                        result.getOrNull()?.accessToken
+                    } else null
+                }
             )
         } else {
             DopplerLocalApi(
