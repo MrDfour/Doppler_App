@@ -85,6 +85,76 @@ Also note `repeat: ""` (empty string) on one-shot alarms, and `next_trigger: -1`
 The colour endpoints are an **array** `[r,g,b]`, not an object — do not confuse with the
 alarm `color` field, which is an object `{"red":..,"green":..,"blue":..}`.
 
+### Endpoint Access Matrix (probed live, Oct 2026)
+
+Every documented endpoint was called through the relay. **The documentation in
+`STANDALONE_IMPLEMENTATION_PLAN.md` is wrong about six payload schemas** and silent about
+which endpoints are read-only.
+
+**READS — 30 of 36 work** (~600–1100ms each):
+
+| Endpoint | Live payload | App model | Correct? |
+|---|---|---|---|
+| `device` | `{"mfgrName":…,"modelNum":…,"serialNum":…,"firmware":"Escapement","hardware":"Enter Sandman","software":"0.1214 Bucky"}` | matches | ok |
+| `doptime/utc-time` | `{"hour":20,"min":37}` | matches | ok |
+| `doptime/timezone` | `{"timezone":"Canada/Saskatchewan"}` | matches | ok |
+| `doptime/offset` | `{"offset":0}` | matches | ok |
+| `software/time-mode` | `{"timeMode":12}` | matches | ok |
+| `hardware/volume` | `{"volume":92}` | matches | ok |
+| `hardware/sound-preset` | `{"preset":"PRESET4"}` | `soundPreset` | **FIXED** |
+| `hardware/sound-preset-mode` | `{"presetmode":1}` | `soundPresetMode: String` | **FIXED** (Int, not String) |
+| `alexa/ascending` | `{"ascending":true}` | matches | ok |
+| `alarms` | see below | matches | ok |
+| `alarms/sounds` | 20 filenames | matches | ok |
+| `hardware/light-sensor` | `{"sensor":1414}` | `lightSensor` | **FIXED** |
+| `hardware/day-mode` | `{"isDayMode":true}` | `dayMode` | **FIXED** |
+| `hardware/high-to-low-transition` | `{"transition":230}` | `highToLowTransition` | **FIXED** |
+| `hardware/low-to-high-transition` | `{"transition":270}` | `lowToHighTransition` | **FIXED** |
+| all four `*-brightness` | `{"brightness":N}` | matches | ok |
+| all four `*-color` | `{"color":[r,g,b]}` | matches | ok |
+| all three `*-sync-*` | `{"sync":bool}` | matches | ok |
+| `software/weather` | `{"wsonoff":true,"location":"78852","wsmode":2}` | matches | ok |
+| `software/weather-wakeup-time` | `{"weatherwakeuptime":"10:00"}` | matches | ok |
+| `alexa/lwa-status` | `{"status":false,"timestamp":254}` | — | ok |
+| `alexa/tap-talk-tone` | `{"tone":true}` | — | ok |
+| `alexa/wake-word-tone` | `{"tone":true}` | — | ok |
+
+**READS — 6 are permanently broken (HTTP 408, ~15s each, 2/2 retries):**
+`hardware/wifi-status`, `software/use-colon`, `software/colon-blink`,
+`software/use-leading-zero`, `software/use-fade-time`, `software/display-seconds`.
+
+These are 6 of the **22 endpoints in a poll cycle**, serialized through the request gate at
+~15s apiece — roughly **90 seconds of dead time per poll**. This is almost certainly the
+dominant remaining latency term, and it is a *server-side* fault we cannot fix from the app.
+Note `software/use-colon` **accepts writes** (PUT → 200 in 406ms) while its GET always times
+out: the app can set the colon but never read it back, and pays 15s every poll trying.
+
+**WRITES — read-only, HTTP 500 on any body (correct or invented):**
+`hardware/sound-preset`, `hardware/sound-preset-mode`, `hardware/day-mode`,
+`software/display-seconds`. `setSoundPreset()` exists in the API layer but is never called
+from the UI, so there is no dead write path to remove.
+
+**WRITES — confirmed working** (each changed, read back, then restored):
+`hardware/volume` (`{"volume":N}`), `hardware/high-display-color`
+(`{"color":[r,g,b]}`), `hardware/high-to-low-transition` + `low-to-high-transition`
+(`{"transition":N}` — **not** the documented long name, which 500s), `hardware/sync-high-low-color`,
+`software/use-colon` (`{"on":true}`), `software/weather`, `doptime/offset`,
+`alexa/tap-talk-tone`.
+
+**Overrides — all three exist, all three are one-shot with `GET → 404`:**
+`hardware/display-text`, `hardware/small-display-digits`, `hardware/display-dots`. All
+returned 200 to PUT. This confirms the `ACCEPTED_UNVERIFIED` verdict is the honest ceiling:
+there is no read-back to verify against, so they can never be `SUPPORTED`.
+
+### The silent-default trap
+
+`DopplerLocalApi` decodes with `ignoreUnknownKeys = true`. A model whose property name does
+not match the wire field therefore does **not** throw — it deserialises to the property's
+**default**. Six polled values were permanently showing fabricated defaults (light sensor stuck
+at 0, both thresholds stuck at 35/45, sound preset stuck at "Flat") while looking entirely
+plausible. Any future field rename will fail the same silent way; `WireSchemaTest` now pins
+every wire name against a verbatim live payload.
+
 ---
 
 ## Cloud Latency: The Real Root Cause (read before touching timeouts)

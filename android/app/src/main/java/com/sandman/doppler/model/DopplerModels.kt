@@ -129,12 +129,16 @@ data class DopplerVolume(
 
 @Serializable
 data class DopplerSoundPreset(
-    val soundPreset: String = "Flat"
+    // Live payload: {"preset":"PRESET4"}. The wire field is `preset`, NOT `soundPreset`.
+    // The docs claim the values are "Flat"/"Rock"/"Pop"/...; the device actually reports
+    // PRESETn. Verified on hardware. PUT is 500 on this endpoint - read-only.
+    @SerialName("preset") val soundPreset: String = "PRESET1"
 )
 
 @Serializable
 data class DopplerSoundPresetMode(
-    val soundPresetMode: String = "auto"
+    // Live payload: {"presetmode":1} - a number, not the documented "auto"/"manual" string.
+    @SerialName("presetmode") val soundPresetMode: Int = 1
 )
 
 @Serializable
@@ -144,22 +148,31 @@ data class DopplerAscending(
 
 @Serializable
 data class DopplerLightSensor(
-    val lightSensor: Int = 0
+    // Live payload: {"sensor":1414}. Wire field is `sensor`, not `lightSensor`. Because
+    // unknown keys are ignored on decode, the old name silently produced 0 forever.
+    @SerialName("sensor") val lightSensor: Int = 0
 )
 
 @Serializable
 data class DopplerDayMode(
-    val dayMode: Boolean = true
+    // Live payload: {"isDayMode":true}. Wire field is `isDayMode`. PUT is 500 - read-only,
+    // which is consistent with day mode being driven by the ambient light sensor.
+    @SerialName("isDayMode") val dayMode: Boolean = true
 )
 
 @Serializable
 data class DopplerHighToLowTransition(
-    val highToLowTransition: Int = 35
+    // Live payload: {"transition":230}. Wire field is the bare `transition`, not
+    // `highToLowTransition`. PUT with the old name returns HTTP 500 and changes nothing,
+    // so this slider was inert; with the real name it returns 200 and applies.
+    @SerialName("transition") val highToLowTransition: Int = 230
 )
 
 @Serializable
 data class DopplerLowToHighTransition(
-    val lowToHighTransition: Int = 45
+    // Also `{"transition":270}` - both transition endpoints use the bare `transition` key,
+    // distinguished only by which endpoint you call.
+    @SerialName("transition") val lowToHighTransition: Int = 270
 )
 
 @Serializable
