@@ -1,7 +1,6 @@
 package com.sandman.doppler.api
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -18,9 +17,10 @@ import java.util.concurrent.TimeUnit
  * access token obtained during onboarding. This is the path that works when the
  * clock's local oatpp daemon is not listening on the LAN (closed port 5443).
  *
- * Requests are serialized through the inherited [DopplerLocalApi.requestMutex] to be
+ * Requests are serialized through the inherited [DopplerLocalApi.requestGate] to be
  * polite to the cloud's single control channel and to protect the clock's single-threaded
- * daemon, exactly as the LAN path does.
+ * daemon, exactly as the LAN path does. The gate is priority-aware, so the background
+ * poll cannot delay a user action on a high-latency link.
  */
 open class DopplerCloudApi(
     host: String = "control.sandmandoppler.com",
@@ -47,19 +47,24 @@ open class DopplerCloudApi(
     protected open fun buildUrl(path: String): String = "https://$host/$dsn/$path"
 
     /**
-     * Executes one control-plane request under the shared [requestMutex].
+     * Executes one control-plane request under the shared [DopplerLocalApi.requestGate].
      *
-     * The lock is what keeps writes to the clock serialized. It was previously missing
+     * The gate is what keeps requests to the clock serialized. It was previously missing
      * here even though this method replaces the parent's implementation wholesale, which
-     * meant cloud-mode requests ran fully concurrently - the exact hazard the mutex
+     * meant cloud-mode requests ran fully concurrently - the exact hazard the gate
      * exists to prevent, and the likely source of volume/setting "jumping" in cloud mode.
+     *
+     * Note this mirrors the parent rather than calling it: the cloud path swaps the
+     * nonce/localKey handshake for a cloud Bearer token, so it cannot share the body.
+     * It must keep honouring [priority] so poll reads still yield to user actions.
      */
     override suspend fun executeAuthenticatedRequest(
         method: String,
         path: String,
         jsonBody: String?,
-        retryOn410: Boolean
-    ): String = requestMutex.withLock {
+        retryOn410: Boolean,
+        priority: RequestGate.Priority
+    ): String = requestGate.withRequest(priority) {
         withContext(Dispatchers.IO) {
             val url = buildUrl(path)
             val reqBuilder = Request.Builder().url(url)

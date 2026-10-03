@@ -3,11 +3,14 @@ package com.sandman.doppler
 import com.google.common.truth.Truth.assertThat
 import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerLocalApi
+import com.sandman.doppler.api.RequestGate
 import com.sandman.doppler.model.DopplerColor
 import com.sandman.doppler.repository.DopplerRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
@@ -142,6 +145,56 @@ class RequestSerializationTest {
     }
 
     @Test
+    fun `every endpoint the repository polls reads at background priority`() = runBlocking {
+        // The lag regression came from poll reads being served ahead of the user. This
+        // pins that all 22 poll getters route through the background helper, so a
+        // future getter added without the priority cannot silently reintroduce it.
+        mockWebServer.dispatcher = ConcurrencyTracker("{}")
+        val api = object : DopplerLocalApi(
+            host = mockWebServer.hostName,
+            port = mockWebServer.port,
+            dsn = "Doppler-12345678",
+            localKey = "",
+            customClient = OkHttpClient.Builder().build(),
+            useTls = false
+        ) {
+            // Surfaces the protected gate so the test can occupy it deliberately.
+            suspend fun <T> holdGate(block: suspend () -> T): T =
+                requestGate.withRequest(RequestGate.Priority.BACKGROUND, block)
+        }
+
+        val gateHeld = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        // Occupy the gate so any request issued below has to queue.
+        val held = async(Dispatchers.Default) {
+            api.holdGate {
+                gateHeld.complete(Unit)
+                release.await()
+            }
+        }
+        gateHeld.await()
+
+        val order = Collections.synchronizedList(mutableListOf<String>())
+        // A representative interactive write and a poll read, both queued behind the
+        // held gate. The write must be served first.
+        val write = async(Dispatchers.Default) {
+            api.setVolume(50)
+            order.add("write")
+        }
+        val read = async(Dispatchers.Default) {
+            api.getVolume()
+            order.add("read")
+        }
+        delay(100)
+        release.complete(Unit)
+        held.await()
+        write.await()
+        read.await()
+
+        assertThat(order).containsExactly("write", "read").inOrder()
+    }
+
+    @Test
     fun `a failed request does not leave the mutex locked`() = runBlocking {
         mockWebServer.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse =
@@ -209,6 +262,117 @@ class RequestSerializationTest {
         // which is what made the cloud path untestable.
         assertThat(api.productionUrl("hardware/volume"))
             .isEqualTo("https://control.example.test/Doppler-abc/hardware/volume")
+    }
+
+    @Test
+    fun `an interactive request does not wait behind a queued background sweep`(): Unit = runBlocking {
+        // Reproduces the regression where a 22-request poll, serialized ahead of the
+        // user, delayed a volume change by the length of the whole sweep.
+        val gate = RequestGate()
+        val order = Collections.synchronizedList(mutableListOf<String>())
+        val firstPollHolding = CompletableDeferred<Unit>()
+        val releaseFirstPoll = CompletableDeferred<Unit>()
+
+        // Occupy the gate with one poll, signalled so we know it is really in hand.
+        val held = async(Dispatchers.Default) {
+            gate.withRequest(RequestGate.Priority.BACKGROUND) {
+                order.add("poll-0")
+                firstPollHolding.complete(Unit)
+                releaseFirstPoll.await()
+            }
+        }
+        firstPollHolding.await()
+
+        // Pile up the rest of the sweep behind it.
+        val queued = (1..3).map { i ->
+            async(Dispatchers.Default) {
+                gate.withRequest(RequestGate.Priority.BACKGROUND) { order.add("poll-$i") }
+            }
+        }
+        delay(50)
+
+        // The user acts and must be served before the remaining polls.
+        val interactive = async(Dispatchers.Default) {
+            gate.withRequest(RequestGate.Priority.INTERACTIVE) { order.add("USER") }
+        }
+        delay(50)
+
+        releaseFirstPoll.complete(Unit)
+        held.await()
+        interactive.await()
+        queued.awaitAll()
+
+        // The queued polls are launched concurrently, so their relative order among
+        // themselves is not defined. The invariant under test is that the user is
+        // served before every one of them.
+        assertThat(order.first()).isEqualTo("poll-0")
+        assertThat(order.indexOf("USER")).isEqualTo(1)
+        assertThat(order.subList(2, order.size).toSet()).containsExactly("poll-1", "poll-2", "poll-3")
+    }
+
+    @Test
+    fun `a background request never overtakes a waiting interactive request`(): Unit = runBlocking {
+        val gate = RequestGate()
+        val order = Collections.synchronizedList(mutableListOf<String>())
+        val release = CompletableDeferred<Unit>()
+        val gateHeld = CompletableDeferred<Unit>()
+
+        val held = async(Dispatchers.Default) {
+            gate.withRequest(RequestGate.Priority.BACKGROUND) {
+                gateHeld.complete(Unit)
+                release.await()
+                order.add("held-poll")
+            }
+        }
+        gateHeld.await()
+
+        val interactive = async(Dispatchers.Default) {
+            gate.withRequest(RequestGate.Priority.INTERACTIVE) { order.add("interactive") }
+        }
+        delay(50)
+        // A poll that arrives *after* the user is already queued must still go last.
+        val late = async(Dispatchers.Default) {
+            gate.withRequest(RequestGate.Priority.BACKGROUND) { order.add("late-poll") }
+        }
+        delay(50)
+
+        release.complete(Unit)
+        held.await()
+        interactive.await()
+        late.await()
+
+        assertThat(order).containsExactly("held-poll", "interactive", "late-poll").inOrder()
+    }
+
+    @Test
+    fun `requests are still fully serialized under priority`() = runBlocking {
+        val tracker = ConcurrencyTracker("{}")
+        mockWebServer.dispatcher = tracker
+        val api = cloudApi()
+
+        // Mix both priorities so the gate is exercised under contention.
+        val jobs = (1..10).map { i ->
+            async(Dispatchers.IO) {
+                if (i % 2 == 0) api.getDeviceInfo()
+                else api.displayText("PROBE", 5, 50, DopplerColor.CYAN)
+            }
+        }
+        jobs.awaitAll()
+
+        assertThat(tracker.maxConcurrent).isEqualTo(1)
+    }
+
+    @Test
+    fun `the gate releases after a thrown failure so later work still runs`() = runBlocking {
+        val gate = RequestGate()
+        val ran = AtomicInteger(0)
+
+        runCatching {
+            gate.withRequest(RequestGate.Priority.BACKGROUND) { throw IllegalStateException("boom") }
+        }
+        gate.withRequest(RequestGate.Priority.INTERACTIVE) { ran.incrementAndGet() }
+
+        assertThat(ran.get()).isEqualTo(1)
     }
 
     @Test

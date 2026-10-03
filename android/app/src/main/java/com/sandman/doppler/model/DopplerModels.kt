@@ -258,7 +258,18 @@ data class OverrideProbeResult(
 )
 
 enum class OverrideVerdict {
-    /** Clock answered 2xx - the override is implemented and the payload was accepted. */
+    /**
+     * Clock answered 2xx. The route exists, but these overrides are one-shot display
+     * commands with no read-back endpoint, so this does NOT prove the clock rendered
+     * anything. Reported separately from SUPPORTED so a 2xx is never mistaken for proof.
+     */
+    ACCEPTED_UNVERIFIED,
+
+    /**
+     * The clock demonstrably acted on the command. Reserved for overrides that expose a
+     * GET so the stored value can be read back; the two display overrides cannot reach
+     * this verdict.
+     */
     SUPPORTED,
 
     /** Route answered 400/422 - the override exists but refused our payload. */

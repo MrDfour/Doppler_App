@@ -61,15 +61,27 @@ class OverrideSupportProbeTest {
         DopplerException.ProtocolException("failed: HTTP $code", httpCode = code)
 
     @Test
-    fun `probe reports SUPPORTED when the clock accepts both overrides`() = runTest {
+    fun `a 2xx is reported as ACCEPTED_UNVERIFIED not SUPPORTED`() = runTest {
         val repository = DopplerRepository(ProbeApi())
 
         val results = repository.probeOverrideSupport()
 
         assertEquals(2, results.size)
-        assertTrue(results.all { it.verdict == OverrideVerdict.SUPPORTED })
+        // Regression guard: these overrides have no GET counterpart, so a 2xx cannot
+        // prove the clock rendered anything. Calling it SUPPORTED overclaimed.
+        assertTrue(results.all { it.verdict == OverrideVerdict.ACCEPTED_UNVERIFIED })
         // Success path does not surface a specific status, only the 2xx range.
         assertTrue(results.all { it.httpCode == null })
+    }
+
+    @Test
+    fun `the unverified verdict tells the user to check the clock`() = runTest {
+        val repository = DopplerRepository(ProbeApi())
+
+        val result = repository.probeOverrideSupport().first()
+
+        assertTrue(result.detail.contains("NOT", ignoreCase = true))
+        assertTrue(result.detail.contains("clock", ignoreCase = true))
     }
 
     @Test
@@ -141,7 +153,7 @@ class OverrideSupportProbeTest {
         val results = repository.probeOverrideSupport()
 
         assertEquals(OverrideVerdict.NOT_SUPPORTED, results[0].verdict)
-        assertEquals(OverrideVerdict.SUPPORTED, results[1].verdict)
+        assertEquals(OverrideVerdict.ACCEPTED_UNVERIFIED, results[1].verdict)
         // Both requests were actually attempted, in order.
         assertEquals(1, api.textCalls)
         assertEquals(1, api.digitsCalls)

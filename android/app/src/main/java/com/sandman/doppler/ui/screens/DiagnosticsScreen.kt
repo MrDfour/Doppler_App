@@ -22,6 +22,8 @@ import com.sandman.doppler.viewmodel.DopplerViewModel
 
 private fun OverrideVerdict.color(): Color = when (this) {
     OverrideVerdict.SUPPORTED -> Emerald400
+    // Amber, not emerald: accepted by the relay but not proven to have rendered.
+    OverrideVerdict.ACCEPTED_UNVERIFIED -> Amber400
     OverrideVerdict.REJECTED -> Amber400
     OverrideVerdict.NOT_SUPPORTED -> Rose500
     OverrideVerdict.UNKNOWN -> Slate400
@@ -107,9 +109,10 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                         fontSize = 16.sp
                     )
                     Text(
-                        "Sends both custom-display overrides once and reports the clock's HTTP status. " +
-                            "NOT SUPPORTED means your firmware has no route for that override; REJECTED means it does " +
-                            "route it and refused the payload. The clock will scroll \"PROBE\" and show 0 for ~5s if they work.",
+                        "Sends both custom-display overrides once and reports the HTTP status. " +
+                            "NOT SUPPORTED means your firmware has no route for it; REJECTED means the route exists " +
+                            "but refused the payload. ACCEPTED UNVERIFIED means the relay took it - these two " +
+                            "overrides have no read-back endpoint, so only the clock face can confirm they rendered.",
                         color = Slate400,
                         fontSize = 12.sp
                     )

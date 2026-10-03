@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 
 /**
  * Single source of truth repository for Sandman Doppler clock state.
@@ -75,6 +76,10 @@ class DopplerRepository(
     /**
      * Executes a sequential aggregate poll of the hardware endpoints.
      * Keeps requests serial to protect the Doppler's single-threaded oatpp daemon.
+     *
+     * These reads run at [com.sandman.doppler.api.RequestGate.Priority.BACKGROUND], so
+     * a user action issued mid-sweep is served after at most the single poll request
+     * already in flight rather than after all 22.
      */
     suspend fun refresh() {
         try {
@@ -200,6 +205,15 @@ class DopplerRepository(
         applyOptimisticUpdate { it?.copy(masterVolume = volume) }
         try {
             localApi.setVolume(volume)
+            // Read the clock back at interactive priority so the displayed value comes
+            // from the hardware now rather than up to a poll interval later. The
+            // optimistic value is already correct unless the firmware clamped the value,
+            // which is exactly what this surfaces.
+            confirmHardware("hardware/volume") { raw ->
+                _deviceState.value = _deviceState.value?.copy(
+                    masterVolume = json.decodeFromString<DopplerVolume>(raw).volume
+                )
+            }
         } catch (e: Exception) {
             _deviceState.value = previousState
             throw e
@@ -311,10 +325,14 @@ class DopplerRepository(
      *
      * Dispatches one real PUT per override and classifies the HTTP status, so a dead
      * override can be attributed to the firmware instead of guessed at from the UI.
+     *
      * NOTE: this is not side-effect free - the clock really does scroll the probe text
-     * and show the probe digits when it supports them, which is what makes the probe
-     * conclusive. Requests still go through [localApi], so they stay serialized behind
-     * its mutex. One probe failing never prevents the other from running.
+     * and show the probe digits if it honours them. One probe failing never prevents the
+     * other from running.
+     *
+     * IMPORTANT: see [OverrideVerdict.ACCEPTED_UNVERIFIED]. These two overrides are
+     * one-shot display commands with no read-back endpoint, so a 2xx proves only that
+     * the route exists - it cannot prove the clock rendered anything.
      */
     suspend fun probeOverrideSupport(): List<OverrideProbeResult> = listOf(
         probeOverride("Scrolling Text Override", "hardware/display-text") {
@@ -325,20 +343,29 @@ class DopplerRepository(
         }
     )
 
+    /**
+     * Runs one override probe and classifies the outcome.
+     *
+     * A 2xx is reported as [OverrideVerdict.ACCEPTED_UNVERIFIED] rather than SUPPORTED:
+     * `display-text` and `small-display-digits` are fire-and-forget display overrides
+     * with no GET counterpart, so there is nothing to read back. The cloud relay also
+     * returns 2xx for requests the clock never acts on. Calling that "supported" would
+     * claim a confirmation we cannot make.
+     */
     private suspend fun probeOverride(
         label: String,
         path: String,
         call: suspend () -> String
     ): OverrideProbeResult = try {
         call()
-        // A successful call means the transport saw a 2xx; the exact code is not surfaced
-        // on the success path, so report the range rather than inventing a specific code.
         OverrideProbeResult(
             label = label,
             path = path,
             httpCode = null,
-            verdict = OverrideVerdict.SUPPORTED,
-            detail = "Accepted (HTTP 2xx)"
+            verdict = OverrideVerdict.ACCEPTED_UNVERIFIED,
+            detail = "PUT accepted (HTTP 2xx). No read-back endpoint exists for this " +
+                "override, so this confirms the route exists but NOT that the clock " +
+                "rendered it - check the clock face."
         )
     } catch (e: Exception) {
         val code = (e as? DopplerException.ProtocolException)?.httpCode
@@ -507,6 +534,30 @@ class DopplerRepository(
 
     private inline fun applyOptimisticUpdate(transform: (DopplerDeviceState?) -> DopplerDeviceState?) {
         _deviceState.value = transform(_deviceState.value)
+    }
+
+    /**
+     * Reads [path] back from the clock right after a write and applies the true value.
+     *
+     * The clock may clamp or reject part of what we sent (brightness limits, colour
+     * rounding), so echoing our own optimistic value can leave the UI showing something
+     * the hardware never accepted. Confirming immediately keeps the UI honest.
+     *
+     * Deliberately best-effort: a failed confirmation must not roll back a write that
+     * already succeeded, and must not throw at the user. The next poll is the backstop.
+     */
+    private suspend fun confirmHardware(path: String, apply: (String) -> Unit) {
+        try {
+            apply(localApi.executeConfirmRequest(path))
+        } catch (e: Exception) {
+            // Keep the optimistic value; the poller will reconcile.
+        }
+    }
+
+    private val json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+        encodeDefaults = true
     }
 
     private companion object {

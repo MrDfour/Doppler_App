@@ -66,16 +66,36 @@ All hardware commands go to `https://control.sandmandoppler.com/{dsn}/...`:
 
 ## Transport Invariants (enforced by tests)
 
-- **Serialized requests.** The Doppler's oatpp daemon is single-threaded, so *every* request must be serialized through `DopplerLocalApi.requestMutex`. This applies to the cloud path too: `DopplerCloudApi` overrides `executeAuthenticatedRequest` wholesale, so it must take the same lock or cloud mode silently runs requests concurrently. See `RequestSerializationTest`.
+- **Serialized requests.** The Doppler's oatpp daemon is single-threaded, so *every* request must be serialized through `DopplerLocalApi.requestGate`. This applies to the cloud path too: `DopplerCloudApi` overrides `executeAuthenticatedRequest` wholesale, so it must take the same gate or cloud mode silently runs requests concurrently. See `RequestSerializationTest`.
 - **One URL seam.** `DopplerCloudApi.buildUrl(path)` is the only place a control-plane URL is built. Override it to redirect cloud traffic at a test double; never inline a host literal.
-- The lock is released on every exit path, including thrown exceptions, so a failed request cannot poison the mutex.
+- The gate is released on every exit path, including thrown exceptions, so a failed request cannot poison it.
+
+### RequestGate priority — read this before adding an endpoint
+
+`RequestGate` is a *priority* gate, not a bare `Mutex`, and the distinction matters:
+
+- `DopplerRepository.refresh()` issues **22 sequential GETs**. Under a plain fair mutex, a user action issued mid-sweep queues behind every remaining poll request. Over `control.sandmandoppler.com` that produced a measured **10–20 s delay** before a volume change was even sent. That is the reason this gate exists — do not "simplify" it back to a `Mutex`.
+- `INTERACTIVE` = user-initiated (slider commits, toggles, alarm edits, probes). Served ahead of queued polls.
+- `BACKGROUND` = the periodic poll. Yields to anything interactive.
+- **All 22 poll getters must go through `executePollRequest(path)`**, never `executeAuthenticatedRequest("GET", ...)`. Centralizing it is deliberate: tagging getters by hand is how one gets missed, and a single stray interactive read reintroduces the lag. `RequestSerializationTest` pins this.
+- The one exception is `executeConfirmRequest(path)` — the post-write read-back used to confirm a value actually landed (e.g. firmware clamping brightness). It is interactive because it exists to reflect a user action immediately.
+- New endpoints: writes default to `INTERACTIVE` (the default parameter), so only new *getters* need attention.
+
+### Cost of serialization
+
+Serializing is not free: a poll cycle is now the sum of 22 round-trips. On a slow link that can exceed the poll interval, so the poll is effectively always running. Priority ordering keeps the user responsive, but if latency stays high, the fix is to trim the poll (fewer endpoints, adaptive interval, or skip reads while the user is actively dragging) — not to weaken the gate.
 
 ## Verdict Taxonomy (for probeOverrideSupport)
 
-- `SUPPORTED` — clock accepted the PUT (2xx, no body returned)
+- `ACCEPTED_UNVERIFIED` — clock/relay answered 2xx. **This is the expected result for the two display overrides and it does not prove anything rendered.** `hardware/display-text` and `hardware/small-display-digits` are one-shot display commands with no GET counterpart, so there is nothing to read back, and the cloud relay returns 2xx for requests the clock never acts on. Only the clock face can confirm.
+- `SUPPORTED` — reserved for overrides that expose a GET, where the stored value was read back and matched. The two display overrides cannot reach this verdict.
 - `REJECTED` — clock routed the request but refused the payload (400/422); fix is on payload side. **Do not report this as a firmware gap** — the route exists, so it is never a missing-implementation problem.
 - `NOT_SUPPORTED` — clock has no route for the endpoint at all (404/405/501); this *is* a firmware gap
 - `UNKNOWN` — unhandled HTTP status (500, 503, etc.)
+
+### Why a 2xx is not proof
+
+A `PUT` to `hardware/display-text` returning 2xx tells you the *route exists*. It does not tell you the firmware implements the override, nor that the cloud relay forwarded it. Observed in practice: probe returned 2xx, no text appeared. Treat `ACCEPTED_UNVERIFIED` as "worth trying", not "works".
 
 ---
 

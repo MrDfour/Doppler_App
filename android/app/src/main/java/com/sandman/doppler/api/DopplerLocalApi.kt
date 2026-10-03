@@ -3,8 +3,6 @@ package com.sandman.doppler.api
 import com.sandman.doppler.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -39,7 +37,7 @@ sealed class DopplerException(message: String, cause: Throwable? = null) : Excep
  *
  * Implements the authentic local protocol (oatpp HTTPS daemon on port 5443) with:
  * - Local SHA-256 Bearer Token derivation via `LocalTokenManager`.
- * - Mutual exclusion lock (`requestMutex`) to serialize writes and protect the single-threaded daemon.
+ * - Priority request gate (`requestGate`) to serialize requests and protect the single-threaded daemon.
  * - Automatic HTTP 410 (Gone) / 401 token refresh retry.
  * - Granular typed methods mapping all Doppler hardware endpoints.
  */
@@ -74,11 +72,15 @@ open class DopplerLocalApi(
      * Serializes every authenticated request to the clock.
      *
      * Protected rather than private so transport subclasses (notably [DopplerCloudApi],
-     * which replaces the request path wholesale) route through the same lock instead of
+     * which replaces the request path wholesale) route through the same gate instead of
      * silently bypassing it. The Doppler's oatpp daemon is single-threaded, so two
-     * overlapping writes can interleave or drop one another.
+     * overlapping requests can interleave or drop one another.
+     *
+     * This is a priority gate, not a bare mutex: the repository polls 22 endpoints in a
+     * row, and on a high-latency link a fair-but-unprioritized lock would make a user
+     * action wait behind the entire remaining sweep. See [RequestGate].
      */
-    protected val requestMutex = Mutex()
+    protected val requestGate = RequestGate()
 
     fun updateCredentials(newHost: String, newPort: Int, newDsn: String, newLocalKey: String) {
         this.host = newHost
@@ -95,6 +97,17 @@ open class DopplerLocalApi(
         }
 
     /**
+     * Reads a state endpoint at [RequestGate.Priority.BACKGROUND].
+     *
+     * Every getter used by the repository poll goes through here so that the whole poll
+     * cycle is uniformly lower priority than a user action. Centralizing it avoids the
+     * easy mistake of tagging 22 getters by hand and missing one, which would let a
+     * single stray interactive read jump the queue and reintroduce the lag.
+     */
+    protected suspend fun executePollRequest(path: String): String =
+        executeAuthenticatedRequest("GET", path, priority = RequestGate.Priority.BACKGROUND)
+
+    /**
      * Executes an authenticated request against `baseUrl/$dsn/$path`.
      * Automatically handles token derivation and refreshes token on HTTP 410 Gone / 401.
      */
@@ -102,8 +115,9 @@ open class DopplerLocalApi(
         method: String,
         path: String,
         jsonBody: String? = null,
-        retryOn410: Boolean = true
-    ): String = requestMutex.withLock {
+        retryOn410: Boolean = true,
+        priority: RequestGate.Priority = RequestGate.Priority.INTERACTIVE
+    ): String = requestGate.withRequest(priority) {
         withContext(Dispatchers.IO) {
             val authHeader = if (localKey.isNotBlank()) {
                 tokenManager.getBearerHeader(baseUrl, dsn, localKey)
@@ -170,12 +184,12 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getDeviceInfo(): DopplerDeviceInfo {
-        val raw = executeAuthenticatedRequest("GET", "device")
+        val raw = executePollRequest("device")
         return json.decodeFromString<DopplerDeviceInfo>(raw)
     }
 
     open suspend fun getWifiStatus(): DopplerWifiStatus {
-        val raw = executeAuthenticatedRequest("GET", "hardware/wifi-status")
+        val raw = executePollRequest("hardware/wifi-status")
         return json.decodeFromString<DopplerWifiStatus>(raw)
     }
 
@@ -184,12 +198,27 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getUtcTime(): DopplerUtcTime {
-        val raw = executeAuthenticatedRequest("GET", "doptime/utc-time")
+        val raw = executePollRequest("doptime/utc-time")
         return json.decodeFromString<DopplerUtcTime>(raw)
     }
 
+    // ==========================================
+    // Poll-scope readback
+    // ==========================================
+
+    /**
+     * Reads [path] at interactive priority for a control the user just changed.
+     *
+     * The repository's poll uses [executePollRequest], so after a write lands we would
+     * otherwise have to wait up to a full poll interval to observe the clock's own
+     * value. This is the one read that is allowed to jump the queue - it exists purely
+     * to confirm a write, never to gather periodic state.
+     */
+    open suspend fun executeConfirmRequest(path: String): String =
+        executeAuthenticatedRequest("GET", path, priority = RequestGate.Priority.INTERACTIVE)
+
     open suspend fun getTimeMode(): DopplerTimeMode {
-        val raw = executeAuthenticatedRequest("GET", "software/time-mode")
+        val raw = executePollRequest("software/time-mode")
         return json.decodeFromString<DopplerTimeMode>(raw)
     }
 
@@ -200,7 +229,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getTimezone(): DopplerTimezone {
-        val raw = executeAuthenticatedRequest("GET", "doptime/timezone")
+        val raw = executePollRequest("doptime/timezone")
         return json.decodeFromString<DopplerTimezone>(raw)
     }
 
@@ -211,7 +240,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getTimeOffset(): DopplerTimeOffset {
-        val raw = executeAuthenticatedRequest("GET", "doptime/offset")
+        val raw = executePollRequest("doptime/offset")
         return json.decodeFromString<DopplerTimeOffset>(raw)
     }
 
@@ -222,7 +251,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getUseColon(): DopplerUseColon {
-        val raw = executeAuthenticatedRequest("GET", "software/use-colon")
+        val raw = executePollRequest("software/use-colon")
         return json.decodeFromString<DopplerUseColon>(raw)
     }
 
@@ -233,7 +262,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getColonBlink(): DopplerColonBlink {
-        val raw = executeAuthenticatedRequest("GET", "software/colon-blink")
+        val raw = executePollRequest("software/colon-blink")
         return json.decodeFromString<DopplerColonBlink>(raw)
     }
 
@@ -244,7 +273,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getUseLeadingZero(): DopplerUseLeadingZero {
-        val raw = executeAuthenticatedRequest("GET", "software/use-leading-zero")
+        val raw = executePollRequest("software/use-leading-zero")
         return json.decodeFromString<DopplerUseLeadingZero>(raw)
     }
 
@@ -255,7 +284,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getFadeTime(): DopplerFadeTime {
-        val raw = executeAuthenticatedRequest("GET", "software/use-fade-time")
+        val raw = executePollRequest("software/use-fade-time")
         return json.decodeFromString<DopplerFadeTime>(raw)
     }
 
@@ -266,7 +295,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getDisplaySeconds(): DopplerDisplaySeconds {
-        val raw = executeAuthenticatedRequest("GET", "software/display-seconds")
+        val raw = executePollRequest("software/display-seconds")
         return json.decodeFromString<DopplerDisplaySeconds>(raw)
     }
 
@@ -281,7 +310,7 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getVolume(): DopplerVolume {
-        val raw = executeAuthenticatedRequest("GET", "hardware/volume")
+        val raw = executePollRequest("hardware/volume")
         return json.decodeFromString<DopplerVolume>(raw)
     }
 
@@ -292,7 +321,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getSoundPreset(): DopplerSoundPreset {
-        val raw = executeAuthenticatedRequest("GET", "hardware/sound-preset")
+        val raw = executePollRequest("hardware/sound-preset")
         return json.decodeFromString<DopplerSoundPreset>(raw)
     }
 
@@ -303,7 +332,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getAscendingVolume(): DopplerAscending {
-        val raw = executeAuthenticatedRequest("GET", "alexa/ascending")
+        val raw = executePollRequest("alexa/ascending")
         return json.decodeFromString<DopplerAscending>(raw)
     }
 
@@ -318,7 +347,7 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getAlarms(): List<DopplerAlarm> {
-        val raw = executeAuthenticatedRequest("GET", "alarms")
+        val raw = executePollRequest("alarms")
         return try {
             json.decodeFromString<DopplerAlarmsResponse>(raw).alarms
         } catch (e: Exception) {
@@ -336,7 +365,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getAlarmSounds(): List<String> {
-        val raw = executeAuthenticatedRequest("GET", "alarms/sounds")
+        val raw = executePollRequest("alarms/sounds")
         return try {
             json.decodeFromString<DopplerAlarmSoundsResponse>(raw).sounds
         } catch (e: Exception) {
@@ -354,17 +383,17 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getLightSensor(): DopplerLightSensor {
-        val raw = executeAuthenticatedRequest("GET", "hardware/light-sensor")
+        val raw = executePollRequest("hardware/light-sensor")
         return json.decodeFromString<DopplerLightSensor>(raw)
     }
 
     open suspend fun getDayMode(): DopplerDayMode {
-        val raw = executeAuthenticatedRequest("GET", "hardware/day-mode")
+        val raw = executePollRequest("hardware/day-mode")
         return json.decodeFromString<DopplerDayMode>(raw)
     }
 
     open suspend fun getHighToLowTransition(): DopplerHighToLowTransition {
-        val raw = executeAuthenticatedRequest("GET", "hardware/high-to-low-transition")
+        val raw = executePollRequest("hardware/high-to-low-transition")
         return json.decodeFromString<DopplerHighToLowTransition>(raw)
     }
 
@@ -375,7 +404,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getLowToHighTransition(): DopplerLowToHighTransition {
-        val raw = executeAuthenticatedRequest("GET", "hardware/low-to-high-transition")
+        val raw = executePollRequest("hardware/low-to-high-transition")
         return json.decodeFromString<DopplerLowToHighTransition>(raw)
     }
 
@@ -386,7 +415,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getHighDisplayBrightness(): DopplerBrightness {
-        val raw = executeAuthenticatedRequest("GET", "hardware/high-display-brightness")
+        val raw = executePollRequest("hardware/high-display-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
@@ -397,7 +426,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getLowDisplayBrightness(): DopplerBrightness {
-        val raw = executeAuthenticatedRequest("GET", "hardware/low-display-brightness")
+        val raw = executePollRequest("hardware/low-display-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
@@ -408,7 +437,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getHighButtonBrightness(): DopplerBrightness {
-        val raw = executeAuthenticatedRequest("GET", "hardware/high-button-brightness")
+        val raw = executePollRequest("hardware/high-button-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
@@ -419,7 +448,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getLowButtonBrightness(): DopplerBrightness {
-        val raw = executeAuthenticatedRequest("GET", "hardware/low-button-brightness")
+        val raw = executePollRequest("hardware/low-button-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
@@ -430,7 +459,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getSyncButtonDisplayBrightness(): DopplerSync {
-        val raw = executeAuthenticatedRequest("GET", "hardware/sync-button-display-brightness")
+        val raw = executePollRequest("hardware/sync-button-display-brightness")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
@@ -441,7 +470,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getSyncHighLowColor(): DopplerSync {
-        val raw = executeAuthenticatedRequest("GET", "hardware/sync-high-low-color")
+        val raw = executePollRequest("hardware/sync-high-low-color")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
@@ -452,7 +481,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getSyncButtonDisplayColor(): DopplerSync {
-        val raw = executeAuthenticatedRequest("GET", "hardware/sync-button-display-color")
+        val raw = executePollRequest("hardware/sync-button-display-color")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
@@ -463,7 +492,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getHighDisplayColor(): DopplerColor {
-        val raw = executeAuthenticatedRequest("GET", "hardware/high-display-color")
+        val raw = executePollRequest("hardware/high-display-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
@@ -474,7 +503,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getLowDisplayColor(): DopplerColor {
-        val raw = executeAuthenticatedRequest("GET", "hardware/low-display-color")
+        val raw = executePollRequest("hardware/low-display-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
@@ -485,7 +514,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getHighButtonColor(): DopplerColor {
-        val raw = executeAuthenticatedRequest("GET", "hardware/high-button-color")
+        val raw = executePollRequest("hardware/high-button-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
@@ -496,7 +525,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getLowButtonColor(): DopplerColor {
-        val raw = executeAuthenticatedRequest("GET", "hardware/low-button-color")
+        val raw = executePollRequest("hardware/low-button-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
@@ -529,7 +558,7 @@ open class DopplerLocalApi(
     // ==========================================
 
     open suspend fun getWeather(): DopplerWeather {
-        val raw = executeAuthenticatedRequest("GET", "software/weather")
+        val raw = executePollRequest("software/weather")
         return json.decodeFromString<DopplerWeather>(raw)
     }
 
@@ -540,7 +569,7 @@ open class DopplerLocalApi(
     }
 
     open suspend fun getWeatherWakeupTime(): DopplerWeatherWakeupTime {
-        val raw = executeAuthenticatedRequest("GET", "software/weather-wakeup-time")
+        val raw = executePollRequest("software/weather-wakeup-time")
         return json.decodeFromString<DopplerWeatherWakeupTime>(raw)
     }
 
