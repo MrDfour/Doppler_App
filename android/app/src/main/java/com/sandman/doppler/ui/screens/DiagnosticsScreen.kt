@@ -37,6 +37,11 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
     val isProbing by viewModel.isProbingOverrides.collectAsState()
     val isCloud = viewModel.isCloudControlPlane
     val connectionModeLabel = viewModel.connectionModeLabel
+    val telemetry by viewModel.requestTelemetry.collectAsState()
+
+    // Cloud latency was misdiagnosed twice from source alone. Sample the real numbers
+    // while this screen is open so the next report is measurement, not inference.
+    LaunchedEffect(Unit) { viewModel.startTelemetrySampling() }
 
     LazyColumn(
         modifier = Modifier
@@ -90,6 +95,55 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                         color = if (state?.online == true) Emerald400 else Rose500,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp
+                    )
+                }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Request Latency (last ${telemetry.sampleCount})",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    if (telemetry.sampleCount == 0) {
+                        Text(
+                            "No requests recorded yet.",
+                            color = Slate400, fontSize = 12.sp
+                        )
+                    } else {
+                        Text(
+                            "Median: ${telemetry.medianDurationMs} ms | " +
+                                "Max: ${telemetry.maxDurationMs} ms | " +
+                                "Last: ${telemetry.lastDurationMs} ms",
+                            color = Slate200, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            "Timeouts: ${telemetry.timeoutCount} | " +
+                                "HTTP errors: ${telemetry.httpErrorCount} | " +
+                                "Token refreshes: ${telemetry.tokenRefreshAttempts}",
+                            color = if (telemetry.timeoutCount > 0) Amber400 else Slate400,
+                            fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                        )
+                        if (telemetry.slowestPath != null) {
+                            Text(
+                                "Slowest: ${telemetry.slowestPath}",
+                                color = Slate400, fontSize = 12.sp, fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                    Text(
+                        "A poll sweep is 22 sequential requests. If Median is high, the relay " +
+                            "is the bottleneck; if Max is much worse than Median, individual " +
+                            "requests are stalling.",
+                        color = Slate400, fontSize = 11.sp
                     )
                 }
             }

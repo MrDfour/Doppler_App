@@ -49,6 +49,7 @@ class DopplerRepository(
         pollingJob = scope.launch {
             while (isActive) {
                 var hadError = false
+                val startedAt = System.currentTimeMillis()
                 try {
                     refresh()
                     if (_lastError.value != null) {
@@ -57,8 +58,15 @@ class DopplerRepository(
                 } catch (e: Exception) {
                     hadError = true
                 }
-                val delayTime = if (hadError) errorBackoffMs else foregroundIntervalMs
-                delay(delayTime)
+
+                // A poll cycle is the sum of 22 round-trips. Over the cloud relay that can
+                // exceed the interval, in which case a fixed delay leaves the poller running
+                // back-to-back with no idle gap - permanently occupying the request gate and
+                // inviting relay throttling. Yield at least as long as the cycle actually
+                // took, so the link always gets a breather between sweeps.
+                val elapsed = System.currentTimeMillis() - startedAt
+                val base = if (hadError) errorBackoffMs else foregroundIntervalMs
+                delay(maxOf(base, elapsed))
             }
         }
     }

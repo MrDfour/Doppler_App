@@ -1,10 +1,56 @@
 # Sandman Doppler Knowledge Center
 
-> **Start here if you are a fresh agent session:** jump to **Read This First: Repo State**
-> (what is verified vs. still unproven), then **Open Issues** (what is deliberately not
-> fixed), then **The UI Write Path** (why sliders feel instant even when the clock has not
-> responded). Sections 1–8 below are protocol reference and only matter once you know the
-> current state.
+> **Start here if you are a fresh agent session:** jump to **Cloud Latency: The Real Root
+> Cause** (timeouts, the refresh storm, and why measuring beats inferring), then **Read This
+> First: Repo State** (what is verified vs. still unproven), then **Open Issues** (what is
+> deliberately not fixed), then **The UI Write Path** (why sliders feel instant even when the
+> clock has not responded). The numbered sections below are protocol reference.
+
+---
+
+## Cloud Latency: The Real Root Cause (read before touching timeouts)
+
+**Symptom:** erratic 2s–30s delay before a control action reaches the clock. **Cloud mode
+only.** Confirmed on device by the user; the LAN path never showed it.
+
+This was misdiagnosed twice from source reading before it was measured. The mutex
+serialization was a *contributing* factor, not the cause. Two cloud-only defects were the
+real problem, and both were invisible in the LAN path:
+
+1. **`readTimeout(30s)` on the cloud client** (`DopplerCloudApi`). The LAN client uses 8s.
+   A poll read that stalled held `requestGate` for up to 30 seconds. **Priority ordering
+   cannot help here** — the gate only orders *queued* waiters, so a request already
+   *executing* blocks everyone behind it regardless of priority. This is the "solid 30
+   seconds". Fixed with per-call deadlines: `BACKGROUND` 5s, `INTERACTIVE` 10s.
+   A stalled poll value is worthless — the next poll is seconds away — so abandoning it
+   fast and freeing the gate is strictly better than waiting it out.
+2. **Token-refresh storm on a dead refresh token.** The 401 branch called
+   `refreshTokenProvider()` inline, per request, *inside the gate*. When the refresh token
+   is dead, every one of the 22 poll reads paid a failed refresh round-trip (itself
+   30s-timeout) before retrying and failing again. Fixed with **fail-fast**: one failed
+   refresh disables further attempts for the session, plus single-flight dedup.
+   Note a *successful* refresh was never the problem — the token is written back and later
+   requests are accepted, so only the failure path stormed.
+3. **Poll cycle longer than its own interval.** 22 sequential WAN round-trips exceed the
+   8s interval, so a fixed delay left the poller running back-to-back with no idle gap.
+   `startPolling` now yields `max(interval, elapsed)` so the link always gets a breather.
+
+### Measure, do not infer
+
+`RequestTelemetry` (see File Map) records duration, outcome, and the slowest path for the
+last 64 requests, surfaced on the Diagnostics screen as median/max/last plus timeout, HTTP
+error, and token-refresh counters. **Check these numbers before theorising about latency
+again.** Two wrong diagnoses in a row is what motivated adding it. The first two attempts
+("the mutex serializes the poll", then "priority ordering should have fixed it") were both
+reasoning from source with no wall-clock data.
+
+### Still unverified
+
+The fixes above are unit-tested against MockWebServer stalls and 401s, but **nobody has
+confirmed the device latency is actually gone.** If it persists, read the Diagnostics
+latency card first: high median means the relay is the bottleneck (structural — trim the
+poll); high max versus low median means individual requests stall (per-request deadline or
+relay throttling).
 
 ---
 
@@ -116,10 +162,11 @@ taxonomy, optimistic-update rollback, drag coalescing, protocol/payload shapes.
 
 **NOT verified — needs a human on real hardware.** Do not report these as done:
 
-- **The 10–20 s action lag fix has never been measured.** `RequestGate` is unit-tested for
-  *ordering*, not for real cloud latency. The 10–20 s figure was the user's report plus the
-  22-request count; it was never instrumented. If lag persists, measure actual gate wait time
-  before theorising again.
+- **The 10–20 s action lag fix has never been measured end-to-end.** `RequestGate` is
+  unit-tested for *ordering*, not duration. The cause was finally identified as the 30s cloud
+  read timeout plus a token-refresh storm (see the Cloud Latency section), both now fixed and
+  unit-tested against MockWebServer — but **nobody has confirmed the device feels fixed.**
+  If it persists, read the Diagnostics latency card before theorising.
 - **The override probe has never produced a real verdict from the clock.** Nobody has run it
   against hardware and reported what `hardware/display-text` and
   `hardware/small-display-digits` actually returned.
@@ -130,9 +177,11 @@ taxonomy, optimistic-update rollback, drag coalescing, protocol/payload shapes.
 
 1. **Poll cost.** `refresh()` is 22 sequential GETs, so one poll cycle is the *sum* of 22
    round-trips. On a slow link that exceeds the poll interval and the poller is effectively
-   always running. Priority ordering protects the user's latency but does not reduce total
-   load. Next lever if the device still feels sluggish: skip reads while the user is actively
-   dragging, or make the interval adaptive. **Do not weaken the gate to fix this.**
+   always running. `startPolling` now yields `max(interval, elapsed)` to guarantee an idle
+   gap, and per-call deadlines stop a stall from blocking the user, but total load is
+   unchanged. **This is the most likely remaining cause if latency persists.** Next lever:
+   skip reads while the user is actively dragging, or make the interval adaptive.
+   **Do not weaken the gate to fix this.**
 2. **Drafts are dropped on the optimistic echo, not on hardware confirmation.**
    `DashboardScreen.kt:41-43` and `DisplayLightingScreen.kt:65-69` clear the local draft as
    soon as the repository's *own optimistic value* comes back. That is self-confirmation: it
@@ -247,6 +296,7 @@ Both must exit 0. Test counts are readable from
 | `api/DopplerLocalApi.kt` | LAN transport, 67 endpoint methods, owns `requestGate` |
 | `api/DopplerCloudApi.kt` | Cloud transport; overrides `executeAuthenticatedRequest` + `buildUrl` |
 | `api/RequestGate.kt` | Priority gate. Read the KDoc before touching concurrency |
+| `api/RequestTelemetry.kt` | Last-64 request durations/outcomes. **Check Diagnostics before diagnosing latency** |
 | `api/LocalTokenManager.kt` | Nonce/`localKey` Bearer derivation, has its own separate mutex |
 | `repository/DopplerRepository.kt` | The 22-request `refresh()` poll, optimistic updates, `probeOverrideSupport()` |
 | `viewmodel/DopplerViewModel.kt` | UI state, poll interval (8000 ms) |

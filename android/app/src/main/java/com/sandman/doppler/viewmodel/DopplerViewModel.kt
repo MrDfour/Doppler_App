@@ -2,10 +2,14 @@ package com.sandman.doppler.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.sandman.doppler.api.RequestTelemetry
 import com.sandman.doppler.model.*
 import com.sandman.doppler.repository.DopplerRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class DiagnosticsLog(
@@ -30,6 +34,28 @@ class DopplerViewModel(
     val connectionModeLabel: String
         get() = if (isCloudControlPlane) "CLOUD CONTROL PLANE" else "DIRECT LOCAL WI-FI"
 
+    private val _requestTelemetry = MutableStateFlow(RequestTelemetry.snapshot())
+    val requestTelemetry: StateFlow<RequestTelemetry.Snapshot> = _requestTelemetry
+
+    /**
+     * Samples [RequestTelemetry] into an observable flow.
+     *
+     * Diagnostics needs to show live timings, and the recorder is a plain object with no
+     * flow of its own. Polled rather than pushed because it is only ever read on a screen
+     * the user opened deliberately, where a 1s tick is free.
+     */
+    fun startTelemetrySampling(periodMs: Long = 1000L) {
+        telemetryJob?.cancel()
+        telemetryJob = viewModelScope.launch {
+            while (isActive) {
+                _requestTelemetry.value = RequestTelemetry.snapshot()
+                delay(periodMs)
+            }
+        }
+    }
+
+    private var telemetryJob: Job? = null
+
     private val _logs = MutableStateFlow<List<DiagnosticsLog>>(emptyList())
     val logs: StateFlow<List<DiagnosticsLog>> = _logs
 
@@ -44,6 +70,7 @@ class DopplerViewModel(
     }
 
     override fun onCleared() {
+        telemetryJob?.cancel()
         super.onCleared()
         repository.stopPolling()
     }
