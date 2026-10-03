@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Single source of truth repository for Sandman Doppler clock state.
@@ -129,7 +130,10 @@ class DopplerRepository(
             val nightToDay = try { localApi.getLowToHighTransition() } catch (e: Exception) { DopplerLowToHighTransition(45) }
 
             // Query alarms
-            val alarms = try { localApi.getAlarms() } catch (e: Exception) { emptyList() }
+            val clockAlarms = try { localApi.getAlarms() } catch (e: Exception) { emptyList() }
+            // The clock's own list is authoritative, except for alarms we have written and
+            // it has not echoed back yet. See mergePendingAlarms.
+            val alarms = mergePendingAlarms(clockAlarms)
             val sounds = try { localApi.getAlarmSounds() } catch (e: Exception) { emptyList() }
 
             if (errorsEncountered >= 4 && firstException != null) {
@@ -415,8 +419,12 @@ class DopplerRepository(
         }
         try {
             localApi.createOrUpdateAlarm(alarm)
+            // Hold on to this copy until the clock's own list confirms it. See
+            // mergePendingAlarms for why the read-back cannot be trusted immediately.
+            pendingAlarmWrites[alarm.id] = PendingAlarm(alarm, System.currentTimeMillis())
             refresh()
         } catch (e: Exception) {
+            pendingAlarmWrites.remove(alarm.id)
             _deviceState.value = previousState
             throw e
         }
@@ -430,11 +438,56 @@ class DopplerRepository(
         }
         try {
             localApi.deleteAlarm(alarmId)
+            // A delete is not pending-confirmation: the clock dropping it from its list is
+            // the confirmation, so stop shielding it immediately.
+            pendingAlarmWrites.remove(alarmId)
             refresh()
         } catch (e: Exception) {
             _deviceState.value = previousState
             throw e
         }
+    }
+
+    private data class PendingAlarm(val alarm: DopplerAlarm, val writtenAt: Long)
+
+    private val pendingAlarmWrites = ConcurrentHashMap<Int, PendingAlarm>()
+
+    /**
+     * Reconciles the clock's alarm list with alarms we have written but it has not echoed.
+     *
+     * Observed on device: setting an alarm made the clock fire it correctly at the
+     * configured hour, but the alarm did not appear in the app until after it had already
+     * triggered. The clock's `GET /alarms` does not include a freshly written alarm right
+     * away, so the `refresh()` that runs immediately after every write - and again on every
+     * 8s poll - replaced the optimistic list with the clock's stale one and made the alarm
+     * vanish. It reappeared only once the clock's own list caught up, which happened to be
+     * after the alarm fired.
+     *
+     * So the clock's list wins wherever the two agree, but an alarm we wrote is kept until
+     * the clock confirms it or [ALARM_CONFIRMATION_GRACE_MS] passes. The timeout matters:
+     * without it a genuinely rejected write would be shown forever.
+     */
+    private fun mergePendingAlarms(fromClock: List<DopplerAlarm>): List<DopplerAlarm> {
+        if (pendingAlarmWrites.isEmpty()) return fromClock
+
+        val now = System.currentTimeMillis()
+        val merged = fromClock.associateBy { it.id }.toMutableMap()
+        val expired = mutableListOf<Int>()
+
+        for ((id, pending) in pendingAlarmWrites) {
+            if (merged.containsKey(id)) {
+                // The clock has it: it is authoritative from here, so stop shielding.
+                expired += id
+                continue
+            }
+            if (now - pending.writtenAt > ALARM_CONFIRMATION_GRACE_MS) {
+                expired += id
+                continue
+            }
+            merged[id] = pending.alarm
+        }
+        expired.forEach { pendingAlarmWrites.remove(it) }
+        return merged.values.sortedBy { it.id }
     }
 
     suspend fun playAlarmSound(sound: String) {
@@ -575,5 +628,14 @@ class DopplerRepository(
         const val PROBE_DIGITS = 0
         const val PROBE_DURATION_SECONDS = 5
         const val PROBE_SPEED = 50
+
+        /**
+         * How long a locally-written alarm is shielded from the clock's alarm list.
+         *
+         * Long enough to outlast the observed gap between writing an alarm and the clock
+         * reporting it, short enough that an alarm the clock genuinely rejected does not
+         * linger in the UI indefinitely.
+         */
+        const val ALARM_CONFIRMATION_GRACE_MS = 60_000L
     }
 }
