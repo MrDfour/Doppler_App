@@ -504,7 +504,8 @@ private fun CloudLoginTab(
                                 if (!keyData.ipAddie.isNullOrEmpty()) {
                                     tokenStore.savedIpAddress = keyData.ipAddie
                                 }
-                                tokenStore.savedPort = 5443
+                                // Real local port comes from the cloud localkey response (default 5443)
+                                tokenStore.savedPort = keyData.port ?: 5443
                                 tokenStore.deviceFriendlyName = thing.name ?: "Sandman Doppler"
                                 onStateUpdate(false, null, "Successfully provisioned ${thing.dsn}!", fetchedThings)
                                 onReconnect()

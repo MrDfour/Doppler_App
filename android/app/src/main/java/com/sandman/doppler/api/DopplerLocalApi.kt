@@ -36,7 +36,9 @@ open class DopplerLocalApi(
     var port: Int = 5443,
     var dsn: String = "Doppler-00000000",
     var localKey: String = "",
-    customClient: OkHttpClient? = null
+    customClient: OkHttpClient? = null,
+    // Default true: real Doppler clocks always serve HTTPS (oatpp). Tests may disable.
+    private val useTls: Boolean = true
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -67,7 +69,7 @@ open class DopplerLocalApi(
 
     val baseUrl: String
         get() {
-            val scheme = if (port == 5443) "https" else "http"
+            val scheme = if (useTls) "https" else "http"
             return "$scheme://$host:$port"
         }
 

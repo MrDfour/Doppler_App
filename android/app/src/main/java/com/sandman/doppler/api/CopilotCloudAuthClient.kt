@@ -93,7 +93,8 @@ private fun CloudThingApiItem.toThingItem(): CloudThingItem? {
 @Serializable
 data class CloudLocalKeyResponse(
     @kotlinx.serialization.SerialName("localkey") val localKey: String,
-    val ipAddie: String? = null
+    val ipAddie: String? = null,
+    val port: Int? = null
 )
 
 /**

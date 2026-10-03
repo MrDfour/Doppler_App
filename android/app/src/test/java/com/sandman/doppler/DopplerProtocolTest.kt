@@ -28,14 +28,14 @@ class DopplerProtocolTest {
         mockWebServer = MockWebServer()
         mockWebServer.start()
 
-        // Standard OkHttpClient for MockWebServer tests
         val httpClient = OkHttpClient.Builder().build()
         localApi = DopplerLocalApi(
             host = mockWebServer.hostName,
             port = mockWebServer.port,
             dsn = testDsn,
             localKey = testLocalKey,
-            customClient = httpClient
+            customClient = httpClient,
+            useTls = false
         )
     }
 
