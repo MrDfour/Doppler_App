@@ -31,7 +31,7 @@ sealed class DopplerException(message: String, cause: Throwable? = null) : Excep
  * - Automatic HTTP 410 (Gone) / 401 token refresh retry.
  * - Granular typed methods mapping all Doppler hardware endpoints.
  */
-class DopplerLocalApi(
+open class DopplerLocalApi(
     var host: String = "192.168.1.100",
     var port: Int = 5443,
     var dsn: String = "Doppler-00000000",
@@ -140,12 +140,12 @@ class DopplerLocalApi(
     // Basic & Hardware Status Endpoints
     // ==========================================
 
-    suspend fun getDeviceInfo(): DopplerDeviceInfo {
+    open suspend fun getDeviceInfo(): DopplerDeviceInfo {
         val raw = executeAuthenticatedRequest("GET", "device")
         return json.decodeFromString<DopplerDeviceInfo>(raw)
     }
 
-    suspend fun getWifiStatus(): DopplerWifiStatus {
+    open suspend fun getWifiStatus(): DopplerWifiStatus {
         val raw = executeAuthenticatedRequest("GET", "hardware/wifi-status")
         return json.decodeFromString<DopplerWifiStatus>(raw)
     }
@@ -154,94 +154,94 @@ class DopplerLocalApi(
     // Time & Display Mode Endpoints
     // ==========================================
 
-    suspend fun getUtcTime(): DopplerUtcTime {
+    open suspend fun getUtcTime(): DopplerUtcTime {
         val raw = executeAuthenticatedRequest("GET", "doptime/utc-time")
         return json.decodeFromString<DopplerUtcTime>(raw)
     }
 
-    suspend fun getTimeMode(): DopplerTimeMode {
+    open suspend fun getTimeMode(): DopplerTimeMode {
         val raw = executeAuthenticatedRequest("GET", "software/time-mode")
         return json.decodeFromString<DopplerTimeMode>(raw)
     }
 
-    suspend fun setTimeMode(mode: Int): DopplerTimeMode {
+    open suspend fun setTimeMode(mode: Int): DopplerTimeMode {
         val body = json.encodeToString(DopplerTimeMode(mode))
         val raw = executeAuthenticatedRequest("PUT", "software/time-mode", body)
         return json.decodeFromString<DopplerTimeMode>(raw)
     }
 
-    suspend fun getTimezone(): DopplerTimezone {
+    open suspend fun getTimezone(): DopplerTimezone {
         val raw = executeAuthenticatedRequest("GET", "doptime/timezone")
         return json.decodeFromString<DopplerTimezone>(raw)
     }
 
-    suspend fun setTimezone(tz: String): DopplerTimezone {
+    open suspend fun setTimezone(tz: String): DopplerTimezone {
         val body = json.encodeToString(DopplerTimezone(tz))
         val raw = executeAuthenticatedRequest("PUT", "doptime/timezone", body)
         return json.decodeFromString<DopplerTimezone>(raw)
     }
 
-    suspend fun getTimeOffset(): DopplerTimeOffset {
+    open suspend fun getTimeOffset(): DopplerTimeOffset {
         val raw = executeAuthenticatedRequest("GET", "doptime/offset")
         return json.decodeFromString<DopplerTimeOffset>(raw)
     }
 
-    suspend fun setTimeOffset(offset: Int): DopplerTimeOffset {
+    open suspend fun setTimeOffset(offset: Int): DopplerTimeOffset {
         val body = json.encodeToString(DopplerTimeOffset(offset))
         val raw = executeAuthenticatedRequest("PUT", "doptime/offset", body)
         return json.decodeFromString<DopplerTimeOffset>(raw)
     }
 
-    suspend fun getUseColon(): DopplerUseColon {
+    open suspend fun getUseColon(): DopplerUseColon {
         val raw = executeAuthenticatedRequest("GET", "software/use-colon")
         return json.decodeFromString<DopplerUseColon>(raw)
     }
 
-    suspend fun setUseColon(on: Boolean): DopplerUseColon {
+    open suspend fun setUseColon(on: Boolean): DopplerUseColon {
         val body = json.encodeToString(DopplerUseColon(on))
         val raw = executeAuthenticatedRequest("PUT", "software/use-colon", body)
         return json.decodeFromString<DopplerUseColon>(raw)
     }
 
-    suspend fun getColonBlink(): DopplerColonBlink {
+    open suspend fun getColonBlink(): DopplerColonBlink {
         val raw = executeAuthenticatedRequest("GET", "software/colon-blink")
         return json.decodeFromString<DopplerColonBlink>(raw)
     }
 
-    suspend fun setColonBlink(blink: Boolean): DopplerColonBlink {
+    open suspend fun setColonBlink(blink: Boolean): DopplerColonBlink {
         val body = json.encodeToString(DopplerColonBlink(blink))
         val raw = executeAuthenticatedRequest("PUT", "software/colon-blink", body)
         return json.decodeFromString<DopplerColonBlink>(raw)
     }
 
-    suspend fun getUseLeadingZero(): DopplerUseLeadingZero {
+    open suspend fun getUseLeadingZero(): DopplerUseLeadingZero {
         val raw = executeAuthenticatedRequest("GET", "software/use-leading-zero")
         return json.decodeFromString<DopplerUseLeadingZero>(raw)
     }
 
-    suspend fun setUseLeadingZero(use: Boolean): DopplerUseLeadingZero {
+    open suspend fun setUseLeadingZero(use: Boolean): DopplerUseLeadingZero {
         val body = json.encodeToString(DopplerUseLeadingZero(use))
         val raw = executeAuthenticatedRequest("PUT", "software/use-leading-zero", body)
         return json.decodeFromString<DopplerUseLeadingZero>(raw)
     }
 
-    suspend fun getFadeTime(): DopplerFadeTime {
+    open suspend fun getFadeTime(): DopplerFadeTime {
         val raw = executeAuthenticatedRequest("GET", "software/use-fade-time")
         return json.decodeFromString<DopplerFadeTime>(raw)
     }
 
-    suspend fun setFadeTime(fade: Boolean): DopplerFadeTime {
+    open suspend fun setFadeTime(fade: Boolean): DopplerFadeTime {
         val body = json.encodeToString(DopplerFadeTime(fade))
         val raw = executeAuthenticatedRequest("PUT", "software/use-fade-time", body)
         return json.decodeFromString<DopplerFadeTime>(raw)
     }
 
-    suspend fun getDisplaySeconds(): DopplerDisplaySeconds {
+    open suspend fun getDisplaySeconds(): DopplerDisplaySeconds {
         val raw = executeAuthenticatedRequest("GET", "software/display-seconds")
         return json.decodeFromString<DopplerDisplaySeconds>(raw)
     }
 
-    suspend fun setDisplaySeconds(sec: Boolean): DopplerDisplaySeconds {
+    open suspend fun setDisplaySeconds(sec: Boolean): DopplerDisplaySeconds {
         val body = json.encodeToString(DopplerDisplaySeconds(sec))
         val raw = executeAuthenticatedRequest("PUT", "software/display-seconds", body)
         return json.decodeFromString<DopplerDisplaySeconds>(raw)
@@ -251,34 +251,34 @@ class DopplerLocalApi(
     // Audio & Equalizer Endpoints
     // ==========================================
 
-    suspend fun getVolume(): DopplerVolume {
+    open suspend fun getVolume(): DopplerVolume {
         val raw = executeAuthenticatedRequest("GET", "hardware/volume")
         return json.decodeFromString<DopplerVolume>(raw)
     }
 
-    suspend fun setVolume(volume: Int): DopplerVolume {
+    open suspend fun setVolume(volume: Int): DopplerVolume {
         val body = json.encodeToString(DopplerVolume(volume.coerceIn(0, 100)))
         val raw = executeAuthenticatedRequest("PUT", "hardware/volume", body)
         return json.decodeFromString<DopplerVolume>(raw)
     }
 
-    suspend fun getSoundPreset(): DopplerSoundPreset {
+    open suspend fun getSoundPreset(): DopplerSoundPreset {
         val raw = executeAuthenticatedRequest("GET", "hardware/sound-preset")
         return json.decodeFromString<DopplerSoundPreset>(raw)
     }
 
-    suspend fun setSoundPreset(preset: String): DopplerSoundPreset {
+    open suspend fun setSoundPreset(preset: String): DopplerSoundPreset {
         val body = json.encodeToString(DopplerSoundPreset(preset))
         val raw = executeAuthenticatedRequest("PUT", "hardware/sound-preset", body)
         return json.decodeFromString<DopplerSoundPreset>(raw)
     }
 
-    suspend fun getAscendingVolume(): DopplerAscending {
+    open suspend fun getAscendingVolume(): DopplerAscending {
         val raw = executeAuthenticatedRequest("GET", "alexa/ascending")
         return json.decodeFromString<DopplerAscending>(raw)
     }
 
-    suspend fun setAscendingVolume(asc: Boolean): DopplerAscending {
+    open suspend fun setAscendingVolume(asc: Boolean): DopplerAscending {
         val body = json.encodeToString(DopplerAscending(asc))
         val raw = executeAuthenticatedRequest("PUT", "alexa/ascending", body)
         return json.decodeFromString<DopplerAscending>(raw)
@@ -288,7 +288,7 @@ class DopplerLocalApi(
     // Alarms Management Endpoints
     // ==========================================
 
-    suspend fun getAlarms(): List<DopplerAlarm> {
+    open suspend fun getAlarms(): List<DopplerAlarm> {
         val raw = executeAuthenticatedRequest("GET", "alarms")
         return try {
             json.decodeFromString<DopplerAlarmsResponse>(raw).alarms
@@ -297,16 +297,16 @@ class DopplerLocalApi(
         }
     }
 
-    suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String {
+    open suspend fun createOrUpdateAlarm(alarm: DopplerAlarm): String {
         val body = json.encodeToString(alarm)
         return executeAuthenticatedRequest("POST", "alarms", body)
     }
 
-    suspend fun deleteAlarm(alarmId: Int): String {
+    open suspend fun deleteAlarm(alarmId: Int): String {
         return executeAuthenticatedRequest("DELETE", "alarms/$alarmId")
     }
 
-    suspend fun getAlarmSounds(): List<String> {
+    open suspend fun getAlarmSounds(): List<String> {
         val raw = executeAuthenticatedRequest("GET", "alarms/sounds")
         return try {
             json.decodeFromString<DopplerAlarmSoundsResponse>(raw).sounds
@@ -315,7 +315,7 @@ class DopplerLocalApi(
         }
     }
 
-    suspend fun playAlarmSound(sound: String): String {
+    open suspend fun playAlarmSound(sound: String): String {
         val body = json.encodeToString(DopplerPlaySoundRequest(sound))
         return executeAuthenticatedRequest("POST", "alarms/sounds/play", body)
     }
@@ -324,154 +324,154 @@ class DopplerLocalApi(
     // Brightness, Colors & Auto-Dimming
     // ==========================================
 
-    suspend fun getLightSensor(): DopplerLightSensor {
+    open suspend fun getLightSensor(): DopplerLightSensor {
         val raw = executeAuthenticatedRequest("GET", "hardware/light-sensor")
         return json.decodeFromString<DopplerLightSensor>(raw)
     }
 
-    suspend fun getDayMode(): DopplerDayMode {
+    open suspend fun getDayMode(): DopplerDayMode {
         val raw = executeAuthenticatedRequest("GET", "hardware/day-mode")
         return json.decodeFromString<DopplerDayMode>(raw)
     }
 
-    suspend fun getHighToLowTransition(): DopplerHighToLowTransition {
+    open suspend fun getHighToLowTransition(): DopplerHighToLowTransition {
         val raw = executeAuthenticatedRequest("GET", "hardware/high-to-low-transition")
         return json.decodeFromString<DopplerHighToLowTransition>(raw)
     }
 
-    suspend fun setHighToLowTransition(threshold: Int): DopplerHighToLowTransition {
+    open suspend fun setHighToLowTransition(threshold: Int): DopplerHighToLowTransition {
         val body = json.encodeToString(DopplerHighToLowTransition(threshold))
         val raw = executeAuthenticatedRequest("PUT", "hardware/high-to-low-transition", body)
         return json.decodeFromString<DopplerHighToLowTransition>(raw)
     }
 
-    suspend fun getLowToHighTransition(): DopplerLowToHighTransition {
+    open suspend fun getLowToHighTransition(): DopplerLowToHighTransition {
         val raw = executeAuthenticatedRequest("GET", "hardware/low-to-high-transition")
         return json.decodeFromString<DopplerLowToHighTransition>(raw)
     }
 
-    suspend fun setLowToHighTransition(threshold: Int): DopplerLowToHighTransition {
+    open suspend fun setLowToHighTransition(threshold: Int): DopplerLowToHighTransition {
         val body = json.encodeToString(DopplerLowToHighTransition(threshold))
         val raw = executeAuthenticatedRequest("PUT", "hardware/low-to-high-transition", body)
         return json.decodeFromString<DopplerLowToHighTransition>(raw)
     }
 
-    suspend fun getHighDisplayBrightness(): DopplerBrightness {
+    open suspend fun getHighDisplayBrightness(): DopplerBrightness {
         val raw = executeAuthenticatedRequest("GET", "hardware/high-display-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun setHighDisplayBrightness(brightness: Int): DopplerBrightness {
+    open suspend fun setHighDisplayBrightness(brightness: Int): DopplerBrightness {
         val body = json.encodeToString(DopplerBrightness(brightness.coerceIn(0, 100)))
         val raw = executeAuthenticatedRequest("PUT", "hardware/high-display-brightness", body)
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun getLowDisplayBrightness(): DopplerBrightness {
+    open suspend fun getLowDisplayBrightness(): DopplerBrightness {
         val raw = executeAuthenticatedRequest("GET", "hardware/low-display-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun setLowDisplayBrightness(brightness: Int): DopplerBrightness {
+    open suspend fun setLowDisplayBrightness(brightness: Int): DopplerBrightness {
         val body = json.encodeToString(DopplerBrightness(brightness.coerceIn(0, 100)))
         val raw = executeAuthenticatedRequest("PUT", "hardware/low-display-brightness", body)
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun getHighButtonBrightness(): DopplerBrightness {
+    open suspend fun getHighButtonBrightness(): DopplerBrightness {
         val raw = executeAuthenticatedRequest("GET", "hardware/high-button-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun setHighButtonBrightness(brightness: Int): DopplerBrightness {
+    open suspend fun setHighButtonBrightness(brightness: Int): DopplerBrightness {
         val body = json.encodeToString(DopplerBrightness(brightness.coerceIn(0, 100)))
         val raw = executeAuthenticatedRequest("PUT", "hardware/high-button-brightness", body)
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun getLowButtonBrightness(): DopplerBrightness {
+    open suspend fun getLowButtonBrightness(): DopplerBrightness {
         val raw = executeAuthenticatedRequest("GET", "hardware/low-button-brightness")
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun setLowButtonBrightness(brightness: Int): DopplerBrightness {
+    open suspend fun setLowButtonBrightness(brightness: Int): DopplerBrightness {
         val body = json.encodeToString(DopplerBrightness(brightness.coerceIn(0, 100)))
         val raw = executeAuthenticatedRequest("PUT", "hardware/low-button-brightness", body)
         return json.decodeFromString<DopplerBrightness>(raw)
     }
 
-    suspend fun getSyncButtonDisplayBrightness(): DopplerSync {
+    open suspend fun getSyncButtonDisplayBrightness(): DopplerSync {
         val raw = executeAuthenticatedRequest("GET", "hardware/sync-button-display-brightness")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun setSyncButtonDisplayBrightness(sync: Boolean): DopplerSync {
+    open suspend fun setSyncButtonDisplayBrightness(sync: Boolean): DopplerSync {
         val body = json.encodeToString(DopplerSync(sync))
         val raw = executeAuthenticatedRequest("PUT", "hardware/sync-button-display-brightness", body)
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun getSyncHighLowColor(): DopplerSync {
+    open suspend fun getSyncHighLowColor(): DopplerSync {
         val raw = executeAuthenticatedRequest("GET", "hardware/sync-high-low-color")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun setSyncHighLowColor(sync: Boolean): DopplerSync {
+    open suspend fun setSyncHighLowColor(sync: Boolean): DopplerSync {
         val body = json.encodeToString(DopplerSync(sync))
         val raw = executeAuthenticatedRequest("PUT", "hardware/sync-high-low-color", body)
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun getSyncButtonDisplayColor(): DopplerSync {
+    open suspend fun getSyncButtonDisplayColor(): DopplerSync {
         val raw = executeAuthenticatedRequest("GET", "hardware/sync-button-display-color")
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun setSyncButtonDisplayColor(sync: Boolean): DopplerSync {
+    open suspend fun setSyncButtonDisplayColor(sync: Boolean): DopplerSync {
         val body = json.encodeToString(DopplerSync(sync))
         val raw = executeAuthenticatedRequest("PUT", "hardware/sync-button-display-color", body)
         return json.decodeFromString<DopplerSync>(raw)
     }
 
-    suspend fun getHighDisplayColor(): DopplerColor {
+    open suspend fun getHighDisplayColor(): DopplerColor {
         val raw = executeAuthenticatedRequest("GET", "hardware/high-display-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun setHighDisplayColor(color: DopplerColor): DopplerColor {
+    open suspend fun setHighDisplayColor(color: DopplerColor): DopplerColor {
         val body = json.encodeToString(DopplerColorPayload(color.toList()))
         val raw = executeAuthenticatedRequest("PUT", "hardware/high-display-color", body)
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun getLowDisplayColor(): DopplerColor {
+    open suspend fun getLowDisplayColor(): DopplerColor {
         val raw = executeAuthenticatedRequest("GET", "hardware/low-display-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun setLowDisplayColor(color: DopplerColor): DopplerColor {
+    open suspend fun setLowDisplayColor(color: DopplerColor): DopplerColor {
         val body = json.encodeToString(DopplerColorPayload(color.toList()))
         val raw = executeAuthenticatedRequest("PUT", "hardware/low-display-color", body)
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun getHighButtonColor(): DopplerColor {
+    open suspend fun getHighButtonColor(): DopplerColor {
         val raw = executeAuthenticatedRequest("GET", "hardware/high-button-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun setHighButtonColor(color: DopplerColor): DopplerColor {
+    open suspend fun setHighButtonColor(color: DopplerColor): DopplerColor {
         val body = json.encodeToString(DopplerColorPayload(color.toList()))
         val raw = executeAuthenticatedRequest("PUT", "hardware/high-button-color", body)
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun getLowButtonColor(): DopplerColor {
+    open suspend fun getLowButtonColor(): DopplerColor {
         val raw = executeAuthenticatedRequest("GET", "hardware/low-button-color")
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
     }
 
-    suspend fun setLowButtonColor(color: DopplerColor): DopplerColor {
+    open suspend fun setLowButtonColor(color: DopplerColor): DopplerColor {
         val body = json.encodeToString(DopplerColorPayload(color.toList()))
         val raw = executeAuthenticatedRequest("PUT", "hardware/low-button-color", body)
         return DopplerColor.fromList(json.decodeFromString<DopplerColorPayload>(raw).color)
@@ -481,17 +481,17 @@ class DopplerLocalApi(
     // Custom Screen Overrides & 29-LED Lightbar
     // ==========================================
 
-    suspend fun displayText(text: String, duration: Int = 10, speed: Int = 50, color: DopplerColor = DopplerColor.CYAN): String {
+    open suspend fun displayText(text: String, duration: Int = 10, speed: Int = 50, color: DopplerColor = DopplerColor.CYAN): String {
         val payload = DopplerDisplayText(text, duration, speed, color.toList())
         return executeAuthenticatedRequest("PUT", "hardware/display-text", json.encodeToString(payload))
     }
 
-    suspend fun displaySmallDigits(number: Int, duration: Int = 15, color: DopplerColor = DopplerColor.AMBER): String {
+    open suspend fun displaySmallDigits(number: Int, duration: Int = 15, color: DopplerColor = DopplerColor.AMBER): String {
         val payload = DopplerSmallDigits(number, duration, color.toList())
         return executeAuthenticatedRequest("PUT", "hardware/small-display-digits", json.encodeToString(payload))
     }
 
-    suspend fun displayDots(effect: DopplerDisplayDots): String {
+    open suspend fun displayDots(effect: DopplerDisplayDots): String {
         return executeAuthenticatedRequest("PUT", "hardware/display-dots", json.encodeToString(effect))
     }
 
@@ -499,23 +499,23 @@ class DopplerLocalApi(
     // Weather
     // ==========================================
 
-    suspend fun getWeather(): DopplerWeather {
+    open suspend fun getWeather(): DopplerWeather {
         val raw = executeAuthenticatedRequest("GET", "software/weather")
         return json.decodeFromString<DopplerWeather>(raw)
     }
 
-    suspend fun setWeather(weather: DopplerWeather): DopplerWeather {
+    open suspend fun setWeather(weather: DopplerWeather): DopplerWeather {
         val body = json.encodeToString(weather)
         val raw = executeAuthenticatedRequest("PUT", "software/weather", body)
         return json.decodeFromString<DopplerWeather>(raw)
     }
 
-    suspend fun getWeatherWakeupTime(): DopplerWeatherWakeupTime {
+    open suspend fun getWeatherWakeupTime(): DopplerWeatherWakeupTime {
         val raw = executeAuthenticatedRequest("GET", "software/weather-wakeup-time")
         return json.decodeFromString<DopplerWeatherWakeupTime>(raw)
     }
 
-    suspend fun setWeatherWakeupTime(time: String): DopplerWeatherWakeupTime {
+    open suspend fun setWeatherWakeupTime(time: String): DopplerWeatherWakeupTime {
         val body = json.encodeToString(DopplerWeatherWakeupTime(time))
         val raw = executeAuthenticatedRequest("PUT", "software/weather-wakeup-time", body)
         return json.decodeFromString<DopplerWeatherWakeupTime>(raw)

@@ -67,6 +67,15 @@ echo location of your Java installation. 1>&2
 
 goto fail
 
+if exist "%JAVA_EXE%" goto execute
+
+echo. 1>&2
+echo ERROR: Java 17 not found at %JAVA_HOME% 1>&2
+echo. 1>&2
+echo Please install Java 17 or update the JAVA_HOME variable in gradlew.bat 1>&2
+
+goto fail
+
 :execute
 @rem Setup the command line
 

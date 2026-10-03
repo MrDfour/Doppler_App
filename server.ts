@@ -1,6 +1,7 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,6 +45,7 @@ export interface DopplerDevice {
   wifiSsid: string;
   wifiRssi: number; // -55 dBm
   alexaLoggedIn: boolean;
+  localKey?: string; // Mock-only: provisioned local key for the LAN token handshake
 
   // Display and buttons configuration
   dayDisplayColor: RGBColor;
@@ -158,6 +160,8 @@ const devices: Record<string, DopplerDevice> = {
     wifiSsid: 'HomeAutomation_5G',
     wifiRssi: -58,
     alexaLoggedIn: true,
+    // Test-only: localKey the Android app needs for the LAN token handshake
+    localKey: 'test-local-key-deadbeef',
 
     dayDisplayColor: { r: 0, g: 220, b: 255 }, // Cyan
     dayDisplayBrightness: 85,
@@ -265,6 +269,7 @@ const devices: Record<string, DopplerDevice> = {
     wifiSsid: 'HomeAutomation_5G',
     wifiRssi: -62,
     alexaLoggedIn: true,
+    localKey: 'test-local-key-c001cafe',
 
     dayDisplayColor: { r: 255, g: 180, b: 50 },
     dayDisplayBrightness: 90,
@@ -636,7 +641,7 @@ app.post('/api/devices/:id/services/:service', (req, res) => {
     case 'activate_light_bar_pulse':
     case 'activate_light_bar_comet':
     case 'activate_light_bar_sweep': {
-      const mode = service.replace('activate_light_bar_', '') as DopplerDevice['lightBarEffect']['mode'];
+      const mode = service.replace('activate_light_bar_', '') as NonNullable<DopplerDevice['lightBarEffect']>['mode'];
       const durationSeconds = payload.duration ? (typeof payload.duration === 'number' ? payload.duration : 15) : 15;
       device.lightBarEffect = {
         mode,
@@ -764,7 +769,7 @@ app.post('/api/events/clear', (req, res) => {
 app.post('/api/devices/:id/alarms/:alarmId/trigger', (req, res) => {
   const device = devices[req.params.id];
   if (!device) return res.status(404).json({ error: 'Device not found' });
-  const alarm = device.alarms[parseInt(req.params.alarmId, 10)];
+  const alarm = device.alarms[parseInt(param(req.params.alarmId), 10)];
   if (!alarm) return res.status(404).json({ error: 'Alarm not found' });
 
   alarm.status = 'active';
@@ -777,6 +782,210 @@ app.post('/api/devices/:id/alarms/:alarmId/trigger', (req, res) => {
   });
 
   res.json({ success: true, alarm });
+});
+
+// ---------------------------------------------------------------------------
+// Authentic Sandman Doppler LAN protocol mock (oatpp port 5443 semantics).
+// Allows end-to-end testing of the standalone Android app without hardware.
+// Mirrors: GET /:dsn/nonce, Bearer "<nonce>|<base64(SHA256(nonce+localKey))>",
+// plus the granular /:dsn/... hardware endpoints.
+// NOTE: serves cleartext for local dev; real hardware uses HTTPS :5443.
+// ---------------------------------------------------------------------------
+
+const lanSessions = new Map<string, { nonce: string; issuedAt: number }>();
+
+function findDeviceByDsn(dsn: string): DopplerDevice | undefined {
+  return Object.values(devices).find((d) => d.dsn === dsn);
+}
+
+function param(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] : value ?? '';
+}
+
+function lanTokenFor(dsn: string): string | null {
+  const device = findDeviceByDsn(dsn);
+  const session = lanSessions.get(dsn);
+  if (!device || !session || !device.localKey) return null;
+  const hash = crypto.createHash('sha256').update(session.nonce + device.localKey, 'utf8').digest('base64');
+  return `${session.nonce}|${hash}`;
+}
+
+function lanAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const device = findDeviceByDsn(param(req.params.dsn));
+  if (!device) return res.status(404).json({ error: 'Unknown device' });
+  const expected = lanTokenFor(param(req.params.dsn));
+  const header = req.headers.authorization || '';
+  if (!expected || header !== `Bearer ${expected}`) {
+    // Refresh-capable clients should re-fetch the nonce on 410/401
+    if (!lanSessions.has(param(req.params.dsn))) return res.status(410).json({ error: 'Session expired' });
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+const ALARM_SOUNDS = [
+  'Sandman.mp3', 'Alarming.mp3', 'Gentle.mp3', 'Jazz.mp3', 'Classic.mp3',
+  'Birds.mp3', 'Chimes.mp3', 'Digga.mp3', 'Dog.mp3', 'Dream.mp3',
+  'Funkadelic.mp3', 'Galaxy.mp3', 'Glow.mp3', 'Growler.mp3', 'Loop.mp3',
+  'Morning.mp3', 'NewAge.mp3', 'Pulse.mp3', 'Shiny.mp3', 'WakeUp.mp3'
+];
+
+app.get('/:dsn/nonce', (req, res) => {
+  const device = findDeviceByDsn(param(req.params.dsn));
+  if (!device) return res.status(404).json({ error: 'Unknown device' });
+  const nonce = crypto.randomBytes(12).toString('base64');
+  lanSessions.set(device.dsn, { nonce, issuedAt: Date.now() });
+  res.json({ nonce });
+});
+
+app.get('/:dsn/device', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  res.json({ mfgrName: d.manufacturer, modelNum: d.modelNumber, dsn: d.dsn, firmware: d.firmwareVersion, software: d.softwareVersion });
+});
+
+app.get('/:dsn/hardware/wifi-status', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  res.json({ ssid: d.wifiSsid, str: Math.max(0, Math.min(100, 100 + d.wifiRssi)), uptime: d.uptimeSeconds * 1000 });
+});
+
+app.get('/:dsn/hardware/volume', lanAuth, (req, res) => {
+  res.json({ volume: findDeviceByDsn(param(req.params.dsn))!.masterVolume });
+});
+app.put('/:dsn/hardware/volume', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.masterVolume = Math.max(0, Math.min(100, Number(req.body?.volume ?? d.masterVolume)));
+  res.json({ volume: d.masterVolume });
+});
+
+app.get('/:dsn/hardware/light-sensor', lanAuth, (req, res) => {
+  res.json({ lightSensor: findDeviceByDsn(param(req.params.dsn))!.ambientLightSensorLux });
+});
+app.get('/:dsn/hardware/day-mode', lanAuth, (req, res) => {
+  res.json({ dayMode: !findDeviceByDsn(param(req.params.dsn))!.isNightMode });
+});
+
+app.get('/:dsn/software/time-mode', lanAuth, (req, res) => {
+  res.json({ timeMode: findDeviceByDsn(param(req.params.dsn))!.time24Hour ? 24 : 12 });
+});
+app.put('/:dsn/software/time-mode', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.time24Hour = Number(req.body?.timeMode) === 24;
+  res.json({ timeMode: d.time24Hour ? 24 : 12 });
+});
+
+app.get('/:dsn/doptime/utc-time', lanAuth, (req, res) => {
+  const now = new Date();
+  res.json({ hour: now.getUTCHours(), min: now.getUTCMinutes() });
+});
+
+app.get('/:dsn/hardware/high-display-color', lanAuth, (req, res) => {
+  const c = findDeviceByDsn(param(req.params.dsn))!.dayDisplayColor;
+  res.json({ color: [c.r, c.g, c.b] });
+});
+app.put('/:dsn/hardware/high-display-color', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  const [r = 0, g = 0, b = 0] = req.body?.color ?? [];
+  d.dayDisplayColor = { r, g, b };
+  res.json({ color: [r, g, b] });
+});
+app.get('/:dsn/hardware/low-display-color', lanAuth, (req, res) => {
+  const c = findDeviceByDsn(param(req.params.dsn))!.nightDisplayColor;
+  res.json({ color: [c.r, c.g, c.b] });
+});
+app.put('/:dsn/hardware/low-display-color', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  const [r = 0, g = 0, b = 0] = req.body?.color ?? [];
+  d.nightDisplayColor = { r, g, b };
+  res.json({ color: [r, g, b] });
+});
+
+app.get('/:dsn/hardware/high-display-brightness', lanAuth, (req, res) => {
+  res.json({ brightness: findDeviceByDsn(param(req.params.dsn))!.dayDisplayBrightness });
+});
+app.put('/:dsn/hardware/high-display-brightness', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.dayDisplayBrightness = Number(req.body?.brightness ?? d.dayDisplayBrightness);
+  res.json({ brightness: d.dayDisplayBrightness });
+});
+app.get('/:dsn/hardware/low-display-brightness', lanAuth, (req, res) => {
+  res.json({ brightness: findDeviceByDsn(param(req.params.dsn))!.nightDisplayBrightness });
+});
+app.put('/:dsn/hardware/low-display-brightness', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.nightDisplayBrightness = Number(req.body?.brightness ?? d.nightDisplayBrightness);
+  res.json({ brightness: d.nightDisplayBrightness });
+});
+
+app.get('/:dsn/alarms', lanAuth, (req, res) => {
+  res.json(Object.values(findDeviceByDsn(param(req.params.dsn))!.alarms));
+});
+app.post('/:dsn/alarms', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  const body = req.body ?? {};
+  const id = Number(body.id ?? 1);
+  const [parsedH, parsedM] = (typeof body.time === 'string' ? body.time.split(':').map(Number) : []) ;
+  const hr = Number.isFinite(Number(body.time_hr)) ? Number(body.time_hr) : (Number.isFinite(parsedH) ? parsedH : 8);
+  const min = Number.isFinite(Number(body.time_min)) ? Number(body.time_min) : (Number.isFinite(parsedM) ? parsedM : 0);
+  d.alarms[id] = {
+    id,
+    name: body.name ?? `Alarm ${id}`,
+    time: `${String(hr).padStart(2, '0')}:${String(min).padStart(2, '0')}`,
+    repeat: typeof body.repeat === 'string' ? body.repeat.match(/.{1,2}/g) ?? [] : body.repeat ?? [],
+    color: body.color && typeof body.color === 'object' && 'red' in body.color
+      ? { r: body.color.red, g: body.color.green, b: body.color.blue }
+      : body.color ?? { r: 255, g: 140, b: 0 },
+    volume: body.volume ?? 70,
+    status: body.status === 1 || body.status === 'set' ? 'set' : body.status === 0 || body.status === 'unarmed' ? 'unarmed' : 'set',
+    sound: body.sound ?? 'Sandman.mp3'
+  };
+  res.json(d.alarms[id]);
+});
+app.delete('/:dsn/alarms/:alarmId', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  delete d.alarms[parseInt(param(req.params.alarmId), 10)];
+  res.json({ success: true });
+});
+app.get('/:dsn/alarms/sounds', lanAuth, (_req, res) => {
+  res.json(ALARM_SOUNDS);
+});
+app.post('/:dsn/alarms/sounds/play', lanAuth, (req, res) => {
+  res.json({ success: true, sound: req.body?.sound ?? null });
+});
+
+app.put('/:dsn/hardware/display-text', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.mainDisplayTextOverride = {
+    text: req.body?.text ?? 'HELLO',
+    speed: req.body?.speed ?? 50,
+    durationSeconds: req.body?.duration ?? 10,
+    color: Array.isArray(req.body?.color) ? { r: req.body.color[0], g: req.body.color[1], b: req.body.color[2] } : { r: 0, g: 220, b: 255 },
+    expiresAt: Date.now() + (req.body?.duration ?? 10) * 1000
+  };
+  res.json({ success: true });
+});
+app.put('/:dsn/hardware/small-display-digits', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  d.miniDisplayOverride = {
+    number: Number(req.body?.num ?? 0),
+    color: Array.isArray(req.body?.color) ? { r: req.body.color[0], g: req.body.color[1], b: req.body.color[2] } : { r: 255, g: 150, b: 0 },
+    expiresAt: Date.now() + (req.body?.duration ?? 15) * 1000
+  };
+  res.json({ success: true });
+});
+app.put('/:dsn/hardware/display-dots', lanAuth, (req, res) => {
+  const d = findDeviceByDsn(param(req.params.dsn))!;
+  const attrs = req.body?.attributes ?? {};
+  d.lightBarEffect = {
+    mode: (attrs.display ?? 'set') as 'off' | 'set' | 'set_each' | 'blink' | 'pulse' | 'comet' | 'sweep' | 'rainbow',
+    color: undefined,
+    colors: Array.isArray(req.body?.colors)
+      ? req.body.colors.map((c: number[]) => ({ r: c[0], g: c[1], b: c[2] }))
+      : undefined,
+    speed: req.body?.speed ?? 40,
+    duration: req.body?.duration ?? 15,
+    expiresAt: Date.now() + (req.body?.duration ?? 15) * 1000
+  } as DopplerDevice['lightBarEffect'];
+  res.json({ success: true });
 });
 
 async function startServer() {

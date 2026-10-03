@@ -119,6 +119,50 @@ class DopplerViewModel(
         }
     }
 
+    fun setUseColon(on: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateUseColon(on)
+                addLog("COMMAND", "Set Use Colon", "On: $on")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set colon visibility", e.message ?: "")
+            }
+        }
+    }
+
+    fun setLeadingZero(use: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateLeadingZero(use)
+                addLog("COMMAND", "Set Leading Zero", "Use: $use")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set leading zero", e.message ?: "")
+            }
+        }
+    }
+
+    fun setFadeTime(fade: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateFadeTime(fade)
+                addLog("COMMAND", "Set Fade Time", "Fade: $fade")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set fade time", e.message ?: "")
+            }
+        }
+    }
+
+    fun setDisplaySeconds(sec: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateDisplaySeconds(sec)
+                addLog("COMMAND", "Set Display Seconds", "Show: $sec")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set display seconds", e.message ?: "")
+            }
+        }
+    }
+
     fun triggerLightBar(effect: DopplerDisplayDots) {
         viewModelScope.launch {
             try {
@@ -183,6 +227,116 @@ class DopplerViewModel(
                 addLog("COMMAND", "Preview Alarm Sound", "Sound: $sound")
             } catch (e: Exception) {
                 addLog("ERROR", "Failed to preview sound", e.message ?: "")
+            }
+        }
+    }
+
+    fun setDayButtonColor(color: DopplerColor) {
+        viewModelScope.launch {
+            try {
+                repository.updateDayButtonColor(color)
+                addLog("COMMAND", "Set Day Button Color", "RGB: (${color.r}, ${color.g}, ${color.b})")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set day button color", e.message ?: "")
+            }
+        }
+    }
+
+    fun setNightButtonColor(color: DopplerColor) {
+        viewModelScope.launch {
+            try {
+                repository.updateNightButtonColor(color)
+                addLog("COMMAND", "Set Night Button Color", "RGB: (${color.r}, ${color.g}, ${color.b})")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set night button color", e.message ?: "")
+            }
+        }
+    }
+
+    fun setDayButtonBrightness(brightness: Int) {
+        viewModelScope.launch {
+            try {
+                repository.updateDayButtonBrightness(brightness)
+                addLog("COMMAND", "Set Day Button Brightness", "Level: $brightness%")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set day button brightness", e.message ?: "")
+            }
+        }
+    }
+
+    fun setNightButtonBrightness(brightness: Int) {
+        viewModelScope.launch {
+            try {
+                repository.updateNightButtonBrightness(brightness)
+                addLog("COMMAND", "Set Night Button Brightness", "Level: $brightness%")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set night button brightness", e.message ?: "")
+            }
+        }
+    }
+
+    fun setSyncButtonDisplayBrightness(sync: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateSyncButtonDisplayBrightness(sync)
+                addLog("COMMAND", "Set Sync Button & Display Brightness", "Enabled: $sync")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set sync brightness", e.message ?: "")
+            }
+        }
+    }
+
+    fun setSyncHighLowColor(sync: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateSyncHighLowColor(sync)
+                addLog("COMMAND", "Set Sync Day & Night Color", "Enabled: $sync")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set sync high/low color", e.message ?: "")
+            }
+        }
+    }
+
+    fun setSyncButtonDisplayColor(sync: Boolean) {
+        viewModelScope.launch {
+            try {
+                repository.updateSyncButtonDisplayColor(sync)
+                addLog("COMMAND", "Set Sync Button & Display Color", "Enabled: $sync")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set sync button/display color", e.message ?: "")
+            }
+        }
+    }
+
+    fun setDayToNightThreshold(threshold: Int) {
+        viewModelScope.launch {
+            try {
+                repository.updateDayToNightThreshold(threshold)
+                addLog("COMMAND", "Set Day->Night Transition Threshold", "Threshold: $threshold")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set day->night threshold", e.message ?: "")
+            }
+        }
+    }
+
+    fun setNightToDayThreshold(threshold: Int) {
+        viewModelScope.launch {
+            try {
+                repository.updateNightToDayThreshold(threshold)
+                addLog("COMMAND", "Set Night->Day Transition Threshold", "Threshold: $threshold")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to set night->day threshold", e.message ?: "")
+            }
+        }
+    }
+
+    fun saveAlarm(alarm: DopplerAlarm) {
+        viewModelScope.launch {
+            try {
+                repository.addOrUpdateAlarm(alarm)
+                addLog("COMMAND", "Saved Alarm #${alarm.id}", "Time: ${alarm.timeFormatted}, Status: ${alarm.status}")
+            } catch (e: Exception) {
+                addLog("ERROR", "Failed to save alarm", e.message ?: "")
             }
         }
     }

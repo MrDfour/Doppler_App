@@ -259,52 +259,53 @@ android/app/src/main/java/com/sandman/doppler/
 ### Phase 3: Repository & State Synchronization
 **Goal:** Create a robust reactive repository that aggregates the granular hardware endpoints into a coherent UI state while respecting hardware rate limits.
 
-- [ ] **Task 3.1: Build Sequential State Poller (`DopplerRepository.kt`)**
+- [x] **Task 3.1: Build Sequential State Poller (`DopplerRepository.kt`)**
   - Path: `android/app/src/main/java/com/sandman/doppler/repository/DopplerRepository.kt`
   - Purpose:
     - The clock does not have a single `/state` endpoint; the repository will execute an aggregated, throttled poll of core endpoints (`wifi-status`, `doptime/utc-time`, `hardware/volume`, `alarms`, `hardware/light-sensor`, `hardware/day-mode`, etc.).
     - Maintain single-pass $O(1)$ state merge into `MutableStateFlow<DopplerState>`.
     - Apply an adaptive polling interval: 5 seconds when app is foregrounded and connected, backing off to 30 seconds on network errors.
-  - Verification: Polling loop runs smoothly without memory leaks or race conditions under coroutine lifecycle tests.
+  - Verification: Polling loop runs smoothly without memory leaks or race conditions under coroutine lifecycle tests (`DopplerRepositoryTest.kt`).
 
-- [ ] **Task 3.2: Implement Optimistic UI Mutations with Rollback**
+- [x] **Task 3.2: Implement Optimistic UI Mutations with Rollback**
   - Path: `android/app/src/main/java/com/sandman/doppler/repository/DopplerRepository.kt`
   - Purpose:
     - When user changes volume, colors, or toggles an alarm, update local `StateFlow` instantly for zero UI latency.
     - Dispatch command through `DopplerLocalApi`.
     - On network error, roll back to prior state and emit error notification in diagnostics.
+  - Verification: 9/9 automated unit tests passing in `DopplerRepositoryTest.kt` asserting optimistic update and exact state rollback on failure.
 
 ---
 
 ### Phase 4: Production User Interface (Jetpack Compose & Material 3)
 **Goal:** Deliver a rich, intuitive, dark Doppler Neon UI that gives the user complete control over all Doppler clock features.
 
-- [ ] **Task 4.1: Dashboard Screen (`DashboardScreen.kt`)**
+- [x] **Task 4.1: Dashboard Screen (`DashboardScreen.kt`)**
   - Large digital time display matching Doppler front digits.
   - Live Day/Night mode badge with ambient lux meter readout.
   - Quick master volume slider with haptic feedback.
   - Wi-Fi connection health badge (SSID, signal strength in dBm).
   - Quick action buttons (Snooze, Stop alarm, Blackout display).
 
-- [ ] **Task 4.2: Display & Lighting Screen (`DisplayLightingScreen.kt`)**
+- [x] **Task 4.2: Display & Lighting Screen (`DisplayLightingScreen.kt`)**
   - Day & Night color pickers with custom hex input and Doppler preset swatches (Cyan `#00DCFF`, Amber `#FF9600`, Deep Red `#FF2828`, Emerald `#10DC78`, Purple `#B43CFF`).
   - Independent brightness sliders for Display and Physical Buttons.
   - Sync toggles: Sync Button & Display Brightness, Sync Button & Display Color, Sync Day & Night Color.
   - Auto-dimming lux transition threshold sliders (Day ➔ Night, Night ➔ Day).
 
-- [ ] **Task 4.3: Alarms Management Screen (`AlarmsScreen.kt`)**
+- [x] **Task 4.3: Alarms Management Screen (`AlarmsScreen.kt`)**
   - Full CRUD for user alarms (1..255) + System Alarm (0).
   - Time picker (12h / 24h format aware).
   - Day of week multi-select chips (`Su`, `Mo`, `Tu`, `We`, `Th`, `Fr`, `Sa`).
   - Sound selector with all 20 Doppler tones + **"Preview Sound"** button that calls `POST /<dsn>/alarms/sounds/play`.
   - Individual alarm volume and color controls.
 
-- [ ] **Task 4.4: 29-LED Lightbar & Digit Override Screen (`LightBarScreen.kt`)**
+- [x] **Task 4.4: 29-LED Lightbar & Digit Override Screen (`LightBarScreen.kt`)**
   - Interactive lightbar animator: select mode (`set`, `blink`, `pulse`, `comet`, `sweep`, `rainbow`), speed, duration, sparkle level, and color.
   - Custom scrolling text input to send text to the main 7-segment display (`PUT /<dsn>/hardware/display-text`).
   - Mini-display numeric override (-199 to 199) (`PUT /<dsn>/hardware/small-display-digits`).
 
-- [ ] **Task 4.5: Onboarding & Settings Wizard (`SettingsScreen.kt`)**
+- [x] **Task 4.5: Onboarding & Settings Wizard (`SettingsScreen.kt`)**
   - Connection status card (Host, Port 5443, DSN, Firmware version, Uptime).
   - "Add / Reconnect Doppler" wizard:
     - Tab 1: **Cloud Login** (enter email/password to automatically pull LocalKey and DSN).
@@ -318,11 +319,11 @@ android/app/src/main/java/com/sandman/doppler/
 ### Phase 5: Companion Simulator & Build Tooling
 **Goal:** Ensure the project can be built from CLI/CI and that the desktop mock server accurately mimics the real oatpp port 5443 protocol for offline testing.
 
-- [ ] **Task 5.1: Provide Android Gradle Wrapper in `android/`**
+- [x] **Task 5.1: Provide Android Gradle Wrapper in `android/`**
   - Generate/configure `gradlew`, `gradlew.bat`, and `gradle/wrapper/gradle-wrapper.properties` (Gradle 8.7+).
   - Verify that `./gradlew testDebugUnitTest` executes cleanly from the terminal.
 
-- [ ] **Task 5.2: Update `server.ts` to Mirror Authentic oatpp Protocol**
+- [x] **Task 5.2: Update `server.ts` to Mirror Authentic oatpp Protocol**
   - Path: `server.ts`
   - Update mock endpoints to provide:
     - `GET /:dsn/nonce`
@@ -335,11 +336,11 @@ android/app/src/main/java/com/sandman/doppler/
 ### Phase 6: Verification & Quality Gate
 **Goal:** Guarantee complete test coverage and verification before deployment.
 
-- [ ] **Task 6.1: Run Unit & Protocol Test Suite**
+- [x] **Task 6.1: Run Unit & Protocol Test Suite**
   - Command: `cd android && ./gradlew testDebugUnitTest`
   - Asserts token derivation, error retry logic, nonce 410 refresh, and model serialization.
 
-- [ ] **Task 6.2: Full Production Assembly**
+- [x] **Task 6.2: Full Production Assembly**
   - Command: `cd android && ./gradlew assembleDebug`
   - Validates full compilation and APK artifact generation.
 

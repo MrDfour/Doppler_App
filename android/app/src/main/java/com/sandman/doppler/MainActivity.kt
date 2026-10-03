@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -74,14 +75,20 @@ class MainActivity : ComponentActivity() {
                             NavigationBarItem(
                                 selected = selectedTab == 3,
                                 onClick = { selectedTab = 3 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") }
+                                icon = { Icon(Icons.Default.Stars, contentDescription = "Lightbar") },
+                                label = { Text("Lightbar") }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 4,
                                 onClick = { selectedTab = 4 },
+                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
+                                label = { Text("Settings") }
+                            )
+                            NavigationBarItem(
+                                selected = selectedTab == 5,
+                                onClick = { selectedTab = 5 },
                                 icon = { Icon(Icons.Default.Info, contentDescription = "Diagnostics") },
-                                label = { Text("Diagnostics") }
+                                label = { Text("Info") }
                             )
                         }
                     }
@@ -91,7 +98,8 @@ class MainActivity : ComponentActivity() {
                             0 -> DashboardScreen(viewModel)
                             1 -> DisplayLightingScreen(viewModel)
                             2 -> AlarmsScreen(viewModel)
-                            3 -> SettingsScreen(
+                            3 -> LightBarScreen(viewModel)
+                            4 -> SettingsScreen(
                                 viewModel = viewModel,
                                 tokenStore = tokenStore,
                                 onReconnect = {
@@ -105,7 +113,7 @@ class MainActivity : ComponentActivity() {
                                     viewModel = DopplerViewModel(repository)
                                 }
                             )
-                            4 -> DiagnosticsScreen(viewModel)
+                            5 -> DiagnosticsScreen(viewModel)
                         }
                     }
                 }

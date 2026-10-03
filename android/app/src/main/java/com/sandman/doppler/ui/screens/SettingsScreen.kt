@@ -96,156 +96,275 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
         errorLeadingIconColor = Rose500
     )
 
-    Column(
+    val state by viewModel.deviceState.collectAsState()
+
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(Slate900)
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp)
     ) {
-        Text(
-            text = "Doppler Onboarding & Settings",
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
+        item {
+            Text(
+                text = "Doppler Onboarding & Settings",
+                color = Color.White,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
 
         // Current status card
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Slate800),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Router, contentDescription = null, tint = Cyan400)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = "Active Configuration", color = Cyan400, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.weight(1f))
-                    // Configuration status badge
-                    val statusColor = if (tokenStore.isConfigured) Emerald400 else Amber400
-                    val statusText = if (tokenStore.isConfigured) "Ready" else "Not Configured"
-                    Surface(
-                        color = statusColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = statusText,
-                            color = statusColor,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate800),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Router, contentDescription = null, tint = Cyan400)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(text = "Active Configuration", color = Cyan400, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.weight(1f))
+                        val statusColor = if (tokenStore.isConfigured) Emerald400 else Amber400
+                        val statusText = if (tokenStore.isConfigured) "Ready" else "Not Configured"
+                        Surface(
+                            color = statusColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = statusText,
+                                color = statusColor,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Name: ${tokenStore.deviceFriendlyName ?: "Not Set"}",
+                        color = Color.LightGray, fontSize = 14.sp
+                    )
+                    Text(
+                        text = "DSN: ${tokenStore.savedDsn ?: "Not Configured"}",
+                        color = Color.LightGray, fontSize = 14.sp
+                    )
+                    Text(
+                        text = "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort} (HTTPS Port 5443)",
+                        color = Color.LightGray, fontSize = 14.sp
+                    )
+                    Text(
+                        text = "Local Key: ${if (!tokenStore.authToken.isNullOrEmpty()) "Configured (Secure)" else "Missing"}",
+                        color = Color.LightGray, fontSize = 14.sp
+                    )
                 }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Name: ${tokenStore.deviceFriendlyName ?: "Not Set"}",
-                    color = Color.LightGray, fontSize = 14.sp
-                )
-                Text(
-                    text = "DSN: ${tokenStore.savedDsn ?: "Not Configured"}",
-                    color = Color.LightGray, fontSize = 14.sp
-                )
-                Text(
-                    text = "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort} (HTTPS Port 5443)",
-                    color = Color.LightGray, fontSize = 14.sp
-                )
-                Text(
-                    text = "Local Key: ${if (!tokenStore.authToken.isNullOrEmpty()) "Configured (Secure)" else "Missing"}",
-                    color = Color.LightGray, fontSize = 14.sp
-                )
             }
         }
 
         // Tab Row
-        TabRow(
-            selectedTabIndex = selectedTab,
-            containerColor = Slate800,
-            contentColor = Cyan400
-        ) {
-            Tab(
-                selected = selectedTab == 0,
-                onClick = { selectedTab = 0 },
-                text = { Text("Cloud Login") }
-            )
-            Tab(
-                selected = selectedTab == 1,
-                onClick = { selectedTab = 1 },
-                text = { Text("Manual Entry") }
-            )
-            Tab(
-                selected = selectedTab == 2,
-                onClick = { selectedTab = 2 },
-                text = { Text("LAN Scan") }
+        item {
+            TabRow(
+                selectedTabIndex = selectedTab,
+                containerColor = Slate800,
+                contentColor = Cyan400
+            ) {
+                Tab(
+                    selected = selectedTab == 0,
+                    onClick = { selectedTab = 0 },
+                    text = { Text("Cloud Login") }
+                )
+                Tab(
+                    selected = selectedTab == 1,
+                    onClick = { selectedTab = 1 },
+                    text = { Text("Manual Entry") }
+                )
+                Tab(
+                    selected = selectedTab == 2,
+                    onClick = { selectedTab = 2 },
+                    text = { Text("LAN Scan") }
+                )
+            }
+        }
+
+        item { Spacer(modifier = Modifier.height(16.dp)) }
+
+        // Tab Content - embedded in a fixed-size Box so LazyColumn doesn't conflict with inner LazyColumns
+        item {
+            Box(modifier = Modifier.fillMaxWidth().height(560.dp)) {
+                when (selectedTab) {
+                    0 -> CloudLoginTab(
+                        email = email,
+                        onEmailChange = { email = it },
+                        password = password,
+                        onPasswordChange = { password = it },
+                        cloudLoading = cloudLoading,
+                        cloudError = cloudError,
+                        cloudSuccess = cloudSuccess,
+                        fetchedThings = fetchedThings,
+                        textFieldColors = textFieldColors,
+                        tokenStore = tokenStore,
+                        onReconnect = onReconnect,
+                        coroutineScope = coroutineScope,
+                        onStateUpdate = { loading, error, success, things ->
+                            cloudLoading = loading
+                            cloudError = error
+                            cloudSuccess = success
+                            fetchedThings = things
+                        }
+                    )
+                    1 -> ManualEntryTab(
+                        manualIp = manualIp,
+                        onIpChange = { manualIp = it; manualValidationError = null },
+                        manualPort = manualPort,
+                        onPortChange = { manualPort = it; manualValidationError = null },
+                        manualDsn = manualDsn,
+                        onDsnChange = { manualDsn = it; manualValidationError = null },
+                        manualKey = manualKey,
+                        onKeyChange = { manualKey = it; manualValidationError = null },
+                        manualName = manualName,
+                        onNameChange = { manualName = it },
+                        manualSavedSuccess = manualSavedSuccess,
+                        manualValidationError = manualValidationError,
+                        testingConnection = testingConnection,
+                        testConnectionResult = testConnectionResult,
+                        textFieldColors = textFieldColors,
+                        context = context,
+                        tokenStore = tokenStore,
+                        onReconnect = onReconnect,
+                        coroutineScope = coroutineScope,
+                        onSave = { saved, error, testing, testResult ->
+                            manualSavedSuccess = saved
+                            manualValidationError = error
+                            testingConnection = testing
+                            testConnectionResult = testResult
+                        }
+                    )
+                    2 -> LanScanTab(
+                        discoveredDevices = discoveredDevices,
+                        scanProgress = scanProgress,
+                        isScanActive = isScanActive,
+                        discovery = discovery,
+                        tokenStore = tokenStore,
+                        onReconnect = onReconnect,
+                        coroutineScope = coroutineScope
+                    )
+                }
+            }
+        }
+
+        // Divider before Clock Settings
+        item { HorizontalDivider(color = Slate800, modifier = Modifier.padding(vertical = 8.dp)) }
+
+        // ── Clock Behavior Settings ──────────────────────────────────────
+        item {
+            Text(
+                text = "Clock Behavior",
+                color = Cyan400,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Tab Content
-        when (selectedTab) {
-            0 -> CloudLoginTab(
-                email = email,
-                onEmailChange = { email = it },
-                password = password,
-                onPasswordChange = { password = it },
-                cloudLoading = cloudLoading,
-                cloudError = cloudError,
-                cloudSuccess = cloudSuccess,
-                fetchedThings = fetchedThings,
-                textFieldColors = textFieldColors,
-                tokenStore = tokenStore,
-                onReconnect = onReconnect,
-                coroutineScope = coroutineScope,
-                onStateUpdate = { loading, error, success, things ->
-                    cloudLoading = loading
-                    cloudError = error
-                    cloudSuccess = success
-                    fetchedThings = things
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate800),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    // 24-Hour Mode
+                    ClockToggleRow(
+                        title = "24-Hour Mode",
+                        description = "Display time in 24-hour format instead of 12h AM/PM",
+                        checked = state?.time24Hour ?: false,
+                        onCheckedChange = { viewModel.setTime24Hour(it) }
+                    )
+                    HorizontalDivider(color = Slate700)
+                    // Colon Visible
+                    ClockToggleRow(
+                        title = "Show Colon",
+                        description = "Display the colon separator between hours and minutes",
+                        checked = state?.colonVisible ?: true,
+                        onCheckedChange = { viewModel.setUseColon(it) }
+                    )
+                    HorizontalDivider(color = Slate700)
+                    // Colon Blink
+                    ClockToggleRow(
+                        title = "Colon Blink",
+                        description = "Blink the colon separator each second",
+                        checked = state?.colonBlink ?: true,
+                        onCheckedChange = { viewModel.setColonBlink(it) }
+                    )
+                    HorizontalDivider(color = Slate700)
+                    // Leading Zero
+                    ClockToggleRow(
+                        title = "Leading Zero (24h)",
+                        description = "Show leading zero in 24h mode (e.g. 08:00 vs 8:00)",
+                        checked = state?.leadingZero24Hour ?: false,
+                        onCheckedChange = { viewModel.setLeadingZero(it) }
+                    )
+                    HorizontalDivider(color = Slate700)
+                    // Fade Time
+                    ClockToggleRow(
+                        title = "Fade Transition",
+                        description = "Fade digit segments during minute transitions",
+                        checked = state?.fadeTimeMode ?: true,
+                        onCheckedChange = { viewModel.setFadeTime(it) }
+                    )
+                    HorizontalDivider(color = Slate700)
+                    // Display Seconds on Mini
+                    ClockToggleRow(
+                        title = "Show Seconds on Mini Display",
+                        description = "Use the secondary 7-segment display to show current seconds",
+                        checked = state?.displaySecondsOnMini ?: false,
+                        onCheckedChange = { viewModel.setDisplaySeconds(it) }
+                    )
                 }
-            )
-            1 -> ManualEntryTab(
-                manualIp = manualIp,
-                onIpChange = { manualIp = it; manualValidationError = null },
-                manualPort = manualPort,
-                onPortChange = { manualPort = it; manualValidationError = null },
-                manualDsn = manualDsn,
-                onDsnChange = { manualDsn = it; manualValidationError = null },
-                manualKey = manualKey,
-                onKeyChange = { manualKey = it; manualValidationError = null },
-                manualName = manualName,
-                onNameChange = { manualName = it },
-                manualSavedSuccess = manualSavedSuccess,
-                manualValidationError = manualValidationError,
-                testingConnection = testingConnection,
-                testConnectionResult = testConnectionResult,
-                textFieldColors = textFieldColors,
-                context = context,
-                tokenStore = tokenStore,
-                onReconnect = onReconnect,
-                coroutineScope = coroutineScope,
-                onSave = { saved, error, testing, testResult ->
-                    manualSavedSuccess = saved
-                    manualValidationError = error
-                    testingConnection = testing
-                    testConnectionResult = testResult
-                }
-            )
-            2 -> LanScanTab(
-                discoveredDevices = discoveredDevices,
-                scanProgress = scanProgress,
-                isScanActive = isScanActive,
-                discovery = discovery,
-                tokenStore = tokenStore,
-                onReconnect = onReconnect,
-                coroutineScope = coroutineScope
-            )
+            }
         }
+
+        item { Spacer(modifier = Modifier.height(24.dp)) }
     }
 }
+
+@Composable
+private fun ClockToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
+            Text(title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(description, color = Slate400, fontSize = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Slate950,
+                checkedTrackColor = Cyan400,
+                uncheckedThumbColor = Slate400,
+                uncheckedTrackColor = Slate700
+            )
+        )
+    }
+}
+
+
 
 @Composable
 private fun CloudLoginTab(

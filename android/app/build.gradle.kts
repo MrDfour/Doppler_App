@@ -60,4 +60,8 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.truth)
+    testImplementation(libs.robolectric)
 }
+
