@@ -307,7 +307,8 @@ data class DopplerAlexaTone(
 data class DopplerDeviceState(
     val dsn: String = "Doppler-00000000",
     val name: String = "Sandman Doppler",
-    val ipAddress: String = "192.168.1.100",
+    /** Blank until a real host is known. Never fabricate a plausible IP here. */
+    val ipAddress: String = "",
     val port: Int = 5443,
     val online: Boolean = false,
     val lastSyncTimestampMs: Long = 0L,

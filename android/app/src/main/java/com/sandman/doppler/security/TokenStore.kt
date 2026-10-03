@@ -28,12 +28,29 @@ class TokenStore(context: Context) {
         context.getSharedPreferences("sandman_doppler_fallback_prefs", Context.MODE_PRIVATE)
     }
 
+    /**
+     * LAN IP discovered from the cloud localkey response, or manually entered.
+     *
+     * Defaults to blank rather than a plausible-looking address. It previously defaulted
+     * to a hardcoded `192.168.1.142`, which was never anyone's actual clock - it was
+     * shown in the UI as though it had been discovered, and because it was never blank
+     * it also made [hasRequiredCredentials] permanently true for the host component.
+     * A blank value honestly means "not discovered yet".
+     */
     var savedIpAddress: String
-        get() = prefs.getString(KEY_IP, "192.168.1.142") ?: "192.168.1.142"
+        get() = prefs.getString(KEY_IP, "") ?: ""
         set(value) = prefs.edit().putString(KEY_IP, value).apply()
 
+    /** True once a real LAN host has been learned, from the cloud or manual entry. */
+    val hasDiscoveredLanHost: Boolean
+        get() = savedIpAddress.isNotBlank() && savedIpAddress != "0.0.0.0"
+
+    /**
+     * 5443 is the documented oatpp daemon port, so it is a real protocol default rather
+     * than a fabricated value - unlike the IP, nothing about it claims to be discovered.
+     */
     var savedPort: Int
-        get() = prefs.getInt(KEY_PORT, 5443) // Default is 5443 for authentic HTTPS Local API
+        get() = prefs.getInt(KEY_PORT, 5443)
         set(value) = prefs.edit().putInt(KEY_PORT, value).apply()
 
     var authToken: String?

@@ -70,8 +70,16 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
                     )
+                    // Show the transport actually in use. In cloud mode the LAN IP is not
+                    // merely unknown, it is irrelevant - naming a host here would imply we
+                    // are talking to the clock directly when we are not.
                     Text(
-                        text = "${state?.ipAddress ?: "192.168.1.100"}:${state?.port ?: 5443} • DSN: ${state?.dsn ?: "Unknown"}",
+                        text = if (viewModel.isCloudControlPlane) {
+                            "CLOUD CONTROL PLANE • DSN: ${state?.dsn ?: "Unknown"}"
+                        } else {
+                            "${state?.ipAddress?.takeIf { it.isNotBlank() } ?: "unknown host"}:" +
+                                "${state?.port ?: 5443} • DSN: ${state?.dsn ?: "Unknown"}"
+                        },
                         color = Slate400,
                         fontSize = 12.sp
                     )

@@ -155,7 +155,13 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         color = Color.LightGray, fontSize = 14.sp
                     )
                     Text(
-                        text = "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort}" + if (!tokenStore.cloudAccessToken.isNullOrEmpty()) " (Cloud)" else " (HTTPS Port 5443)",
+                        text = if (tokenStore.hasDiscoveredLanHost) {
+                            "Host: ${tokenStore.savedIpAddress}:${tokenStore.savedPort}" +
+                                if (!tokenStore.cloudAccessToken.isNullOrEmpty()) " (Cloud)" else " (LAN)"
+                        } else {
+                            "LAN host not discovered" +
+                                if (!tokenStore.cloudAccessToken.isNullOrEmpty()) " - using Cloud" else ""
+                        },
                         color = Color.LightGray, fontSize = 14.sp
                     )
                     Text(
