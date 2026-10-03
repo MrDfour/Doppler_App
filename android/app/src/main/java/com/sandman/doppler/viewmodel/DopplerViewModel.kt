@@ -26,6 +26,12 @@ class DopplerViewModel(
     private val _logs = MutableStateFlow<List<DiagnosticsLog>>(emptyList())
     val logs: StateFlow<List<DiagnosticsLog>> = _logs
 
+    private val _overrideProbeResults = MutableStateFlow<List<OverrideProbeResult>?>(null)
+    val overrideProbeResults: StateFlow<List<OverrideProbeResult>?> = _overrideProbeResults
+
+    private val _isProbingOverrides = MutableStateFlow(false)
+    val isProbingOverrides: StateFlow<Boolean> = _isProbingOverrides
+
     init {
         repository.startPolling(intervalMs = 8000L)
     }
@@ -343,6 +349,40 @@ class DopplerViewModel(
 
     fun pressButton(button: String) {
         addLog("EVENT", "Pressed button: $button", "Triggered from mobile dashboard")
+    }
+
+    /**
+     * Fires both custom-display overrides once and reports the HTTP status of each.
+     *
+     * This is the definitive test for "does my firmware implement these?": a NOT_SUPPORTED
+     * verdict means the clock has no route for the override, while REJECTED means it does
+     * route it and refused our payload - a bug on our side rather than the hardware's.
+     * The clock will visibly scroll "PROBE" and show 0 for ~5s if the overrides work.
+     */
+    fun probeOverrideSupport() {
+        if (_isProbingOverrides.value) return
+        viewModelScope.launch {
+            _isProbingOverrides.value = true
+            _overrideProbeResults.value = null
+            try {
+                val results = repository.probeOverrideSupport()
+                _overrideProbeResults.value = results
+                addLog(
+                    "PROBE",
+                    "Override support probe complete",
+                    results.joinToString("\n") { "${it.label}: ${it.describe()}" }
+                )
+            } catch (e: Exception) {
+                addLog("ERROR", "Override support probe failed", e.message ?: "")
+            } finally {
+                _isProbingOverrides.value = false
+            }
+        }
+    }
+
+    private fun OverrideProbeResult.describe(): String {
+        val status = httpCode?.let { "HTTP $it" } ?: "no HTTP response"
+        return "$verdict ($status) - $detail"
     }
 
     private fun addLog(type: String, summary: String, details: String) {

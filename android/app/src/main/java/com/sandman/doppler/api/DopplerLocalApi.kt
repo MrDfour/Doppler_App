@@ -17,7 +17,19 @@ import java.util.concurrent.TimeUnit
 sealed class DopplerException(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class LocalConnectionException(message: String, cause: Throwable? = null) : DopplerException(message, cause)
     class TimeoutException(message: String, cause: Throwable? = null) : DopplerException(message, cause)
-    class ProtocolException(message: String, cause: Throwable? = null) : DopplerException(message, cause)
+    /**
+     * The clock (or the cloud control plane) answered, but rejected the request.
+     *
+     * [httpCode] carries the status verbatim so callers - notably the override
+     * support probe - can tell "this route does not exist on this firmware"
+     * (404/405/501) apart from "the route exists but refused the payload"
+     * (400/422) without parsing the message. Null when no HTTP response arrived.
+     */
+    class ProtocolException(
+        message: String,
+        cause: Throwable? = null,
+        val httpCode: Int? = null
+    ) : DopplerException(message, cause)
     class DeviceNotFoundException(message: String) : DopplerException(message)
     class AuthenticationException(message: String) : DopplerException(message)
 }
@@ -123,14 +135,20 @@ open class DopplerLocalApi(
                     val retryResponse = client.newCall(retryRequest).execute()
                     retryResponse.use { retryResp ->
                         if (!retryResp.isSuccessful) {
-                            throw DopplerException.ProtocolException("Request failed after nonce refresh: HTTP ${retryResp.code}")
+                            throw DopplerException.ProtocolException(
+                                "Request failed after nonce refresh: HTTP ${retryResp.code}",
+                                httpCode = retryResp.code
+                            )
                         }
                         return@withContext retryResp.body?.string() ?: ""
                     }
                 }
 
                 if (!resp.isSuccessful) {
-                    throw DopplerException.ProtocolException("Doppler returned HTTP ${resp.code} for $path")
+                    throw DopplerException.ProtocolException(
+                        "Doppler returned HTTP ${resp.code} for $path",
+                        httpCode = resp.code
+                    )
                 }
 
                 return@withContext resp.body?.string() ?: ""

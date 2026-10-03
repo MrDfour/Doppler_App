@@ -240,6 +240,37 @@ data class DopplerDisplayDots(
     val attributes: Map<String, String>? = null
 )
 
+/**
+ * Outcome of a single custom-display override support probe.
+ *
+ * The two overrides (scrolling text, mini digits) are documented but optional: a given
+ * firmware build may simply not route them. The status code alone cannot distinguish
+ * "this firmware does not implement the override" from "we sent the wrong payload",
+ * so the probe classifies the code into a [OverrideVerdict] instead.
+ */
+data class OverrideProbeResult(
+    val label: String,
+    val path: String,
+    /** Verbatim HTTP status, or null when the request never got an HTTP response. */
+    val httpCode: Int?,
+    val verdict: OverrideVerdict,
+    val detail: String
+)
+
+enum class OverrideVerdict {
+    /** Clock answered 2xx - the override is implemented and the payload was accepted. */
+    SUPPORTED,
+
+    /** Route answered 400/422 - the override exists but refused our payload. */
+    REJECTED,
+
+    /** Route answered 404/405/501 - this firmware does not implement the override. */
+    NOT_SUPPORTED,
+
+    /** Transport failure or an unrecognised status - inconclusive, needs a retry. */
+    UNKNOWN
+}
+
 @Serializable
 data class DopplerWeather(
     val wsonoff: Boolean = false,

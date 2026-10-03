@@ -1,5 +1,6 @@
 package com.sandman.doppler.repository
 
+import com.sandman.doppler.api.DopplerException
 import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.model.*
 import kotlinx.coroutines.CoroutineScope
@@ -296,6 +297,64 @@ class DopplerRepository(
         localApi.displaySmallDigits(number, duration, color)
     }
 
+    /**
+     * Probes whether this clock's firmware implements the two custom-display overrides.
+     *
+     * Dispatches one real PUT per override and classifies the HTTP status, so a dead
+     * override can be attributed to the firmware instead of guessed at from the UI.
+     * NOTE: this is not side-effect free - the clock really does scroll the probe text
+     * and show the probe digits when it supports them, which is what makes the probe
+     * conclusive. Requests still go through [localApi], so they stay serialized behind
+     * its mutex. One probe failing never prevents the other from running.
+     */
+    suspend fun probeOverrideSupport(): List<OverrideProbeResult> = listOf(
+        probeOverride("Scrolling Text Override", "hardware/display-text") {
+            localApi.displayText(PROBE_TEXT, PROBE_DURATION_SECONDS, PROBE_SPEED, DopplerColor.CYAN)
+        },
+        probeOverride("Mini Display Override", "hardware/small-display-digits") {
+            localApi.displaySmallDigits(PROBE_DIGITS, PROBE_DURATION_SECONDS, DopplerColor.AMBER)
+        }
+    )
+
+    private suspend fun probeOverride(
+        label: String,
+        path: String,
+        call: suspend () -> String
+    ): OverrideProbeResult = try {
+        call()
+        // A successful call means the transport saw a 2xx; the exact code is not surfaced
+        // on the success path, so report the range rather than inventing a specific code.
+        OverrideProbeResult(
+            label = label,
+            path = path,
+            httpCode = null,
+            verdict = OverrideVerdict.SUPPORTED,
+            detail = "Accepted (HTTP 2xx)"
+        )
+    } catch (e: Exception) {
+        val code = (e as? DopplerException.ProtocolException)?.httpCode
+        OverrideProbeResult(
+            label = label,
+            path = path,
+            httpCode = code,
+            verdict = verdictForCode(code),
+            detail = e.message ?: e.javaClass.simpleName
+        )
+    }
+
+    /**
+     * Maps a status code to a verdict. The 404/405/501 vs 400/422 split is the point of
+     * the probe: the first means this firmware does not route the override at all, the
+     * second means it does route it and refused our payload - opposite fixes.
+     */
+    private fun verdictForCode(code: Int?): OverrideVerdict = when (code) {
+        null -> OverrideVerdict.UNKNOWN
+        in 200..299 -> OverrideVerdict.SUPPORTED
+        400, 422 -> OverrideVerdict.REJECTED
+        404, 405, 501 -> OverrideVerdict.NOT_SUPPORTED
+        else -> OverrideVerdict.UNKNOWN
+    }
+
     suspend fun addOrUpdateAlarm(alarm: DopplerAlarm) {
         val previousState = _deviceState.value
         applyOptimisticUpdate { current ->
@@ -434,5 +493,14 @@ class DopplerRepository(
 
     private inline fun applyOptimisticUpdate(transform: (DopplerDeviceState?) -> DopplerDeviceState?) {
         _deviceState.value = transform(_deviceState.value)
+    }
+
+    private companion object {
+        // Short and unmistakable on the display, so a SUPPORTED verdict is visible
+        // to the naked eye and not just in the log.
+        const val PROBE_TEXT = "PROBE"
+        const val PROBE_DIGITS = 0
+        const val PROBE_DURATION_SECONDS = 5
+        const val PROBE_SPEED = 50
     }
 }

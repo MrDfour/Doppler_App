@@ -86,7 +86,8 @@ class DopplerCloudApi(
         response.use { resp ->
             if (!resp.isSuccessful) {
                 throw DopplerException.ProtocolException(
-                    "Cloud control for $path failed: HTTP ${resp.code}"
+                    "Cloud control for $path failed: HTTP ${resp.code}",
+                    httpCode = resp.code
                 )
             }
             return@withContext resp.body?.string() ?: ""

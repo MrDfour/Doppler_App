@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.HealthAndSafety
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13,13 +15,24 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sandman.doppler.model.OverrideProbeResult
+import com.sandman.doppler.model.OverrideVerdict
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
+
+private fun OverrideVerdict.color(): Color = when (this) {
+    OverrideVerdict.SUPPORTED -> Emerald400
+    OverrideVerdict.REJECTED -> Amber400
+    OverrideVerdict.NOT_SUPPORTED -> Rose500
+    OverrideVerdict.UNKNOWN -> Slate400
+}
 
 @Composable
 fun DiagnosticsScreen(viewModel: DopplerViewModel) {
     val state by viewModel.deviceState.collectAsState()
     val logs by viewModel.logs.collectAsState()
+    val probeResults by viewModel.overrideProbeResults.collectAsState()
+    val isProbing by viewModel.isProbingOverrides.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -48,6 +61,80 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                     Text("Device DSN: ${state?.dsn ?: "N/A"}", color = Slate200, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     Text("IP Endpoint: ${state?.ipAddress ?: "N/A"}:3000", color = Slate400, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                     Text("Firmware: ${state?.firmwareVersion ?: "1.4.12"} | Model: ${state?.modelNumber ?: "PAI-DOPPLER-01"}", color = Slate400, fontSize = 12.sp)
+                }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "Override Support Probe",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        "Sends both custom-display overrides once and reports the clock's HTTP status. " +
+                            "NOT SUPPORTED means your firmware has no route for that override; REJECTED means it does " +
+                            "route it and refused the payload. The clock will scroll \"PROBE\" and show 0 for ~5s if they work.",
+                        color = Slate400,
+                        fontSize = 12.sp
+                    )
+                    Button(
+                        onClick = { viewModel.probeOverrideSupport() },
+                        enabled = !isProbing,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Cyan400,
+                            disabledContainerColor = Slate800
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.HealthAndSafety, contentDescription = null, tint = Slate950)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isProbing) "Probing..." else "Probe Override Support",
+                            color = Slate950,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    probeResults?.forEach { result ->
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = result.label,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = result.verdict.name,
+                                    color = result.verdict.color(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Text(
+                                text = result.httpCode?.let { "HTTP $it" } ?: "no HTTP response",
+                                color = result.verdict.color(),
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                            Text(
+                                text = result.detail,
+                                color = Slate400,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
             }
         }
