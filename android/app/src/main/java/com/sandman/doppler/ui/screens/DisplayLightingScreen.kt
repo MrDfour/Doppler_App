@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sandman.doppler.model.DopplerColor
+import com.sandman.doppler.ui.rememberDragCommitGate
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
 import kotlin.math.roundToInt
@@ -41,17 +42,43 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
     val dayButtonColor = state?.dayButtonColor ?: DopplerColor.CYAN
     val nightButtonColor = state?.nightButtonColor ?: DopplerColor.DEEP_RED
 
-    val dayDisplayBrightness = state?.dayDisplayBrightness ?: 85
-    val nightDisplayBrightness = state?.nightDisplayBrightness ?: 25
-    val dayButtonBrightness = state?.dayButtonBrightness ?: 80
-    val nightButtonBrightness = state?.nightButtonBrightness ?: 20
+    // Sliders preview locally while dragging, but each DragCommitGate throttles the
+    // writes so a drag costs one command per settle window instead of one per frame.
+    val dayDisplayGate = rememberDragCommitGate { viewModel.setDayBrightness(it) }
+    val nightDisplayGate = rememberDragCommitGate { viewModel.setNightBrightness(it) }
+    val dayButtonGate = rememberDragCommitGate { viewModel.setDayButtonBrightness(it) }
+    val nightButtonGate = rememberDragCommitGate { viewModel.setNightButtonBrightness(it) }
+    val dayToNightGate = rememberDragCommitGate { viewModel.setDayToNightThreshold(it) }
+    val nightToDayGate = rememberDragCommitGate { viewModel.setNightToDayThreshold(it) }
+
+    val confirmedBrightness = mapOf(
+        "dayDisplay" to (state?.dayDisplayBrightness ?: 85),
+        "nightDisplay" to (state?.nightDisplayBrightness ?: 25),
+        "dayButton" to (state?.dayButtonBrightness ?: 80),
+        "nightButton" to (state?.nightButtonBrightness ?: 20),
+        "dayToNightThresh" to (state?.dayToNightThreshold ?: 35),
+        "nightToDayThresh" to (state?.nightToDayThreshold ?: 45)
+    )
+
+    // Previews the repository has already echoed back (optimistic update) can be dropped.
+    val drafts = remember { mutableStateMapOf<String, Int>() }
+    LaunchedEffect(confirmedBrightness, drafts.keys.toList()) {
+        confirmedBrightness.forEach { (key, value) ->
+            if (drafts[key] == value) drafts.remove(key)
+        }
+    }
+
+    val dayDisplayBrightness = drafts["dayDisplay"] ?: (state?.dayDisplayBrightness ?: 85)
+    val nightDisplayBrightness = drafts["nightDisplay"] ?: (state?.nightDisplayBrightness ?: 25)
+    val dayButtonBrightness = drafts["dayButton"] ?: (state?.dayButtonBrightness ?: 80)
+    val nightButtonBrightness = drafts["nightButton"] ?: (state?.nightButtonBrightness ?: 20)
 
     val syncButtonDisplayBrightness = state?.syncButtonDisplayBrightness ?: true
     val syncHighLowColor = state?.syncHighLowColor ?: false
     val syncButtonDisplayColor = state?.syncButtonDisplayColor ?: true
 
-    val dayToNightThresh = state?.dayToNightThreshold ?: 35
-    val nightToDayThresh = state?.nightToDayThreshold ?: 45
+    val dayToNightThresh = drafts["dayToNightThresh"] ?: (state?.dayToNightThreshold ?: 35)
+    val nightToDayThresh = drafts["nightToDayThresh"] ?: (state?.nightToDayThreshold ?: 45)
     val currentLux = state?.ambientLightSensorLux ?: 100
     val isNightMode = state?.isNightMode ?: false
 
@@ -377,7 +404,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         }
                         Slider(
                             value = dayDisplayBrightness.toFloat(),
-                            onValueChange = { viewModel.setDayBrightness(it.roundToInt()) },
+                            onValueChange = {
+                                drafts["dayDisplay"] = it.roundToInt()
+                                dayDisplayGate.submit(it.roundToInt())
+                            },
                             valueRange = 0f..100f,
                             colors = SliderDefaults.colors(
                                 thumbColor = Amber400,
@@ -398,7 +428,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         }
                         Slider(
                             value = nightDisplayBrightness.toFloat(),
-                            onValueChange = { viewModel.setNightBrightness(it.roundToInt()) },
+                            onValueChange = {
+                                drafts["nightDisplay"] = it.roundToInt()
+                                nightDisplayGate.submit(it.roundToInt())
+                            },
                             valueRange = 0f..100f,
                             colors = SliderDefaults.colors(
                                 thumbColor = Purple400,
@@ -422,7 +455,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             }
                             Slider(
                                 value = dayButtonBrightness.toFloat(),
-                                onValueChange = { viewModel.setDayButtonBrightness(it.roundToInt()) },
+                                onValueChange = {
+                                    drafts["dayButton"] = it.roundToInt()
+                                    dayButtonGate.submit(it.roundToInt())
+                                },
                                 valueRange = 0f..100f,
                                 colors = SliderDefaults.colors(
                                     thumbColor = Cyan400,
@@ -443,7 +479,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             }
                             Slider(
                                 value = nightButtonBrightness.toFloat(),
-                                onValueChange = { viewModel.setNightButtonBrightness(it.roundToInt()) },
+                                onValueChange = {
+                                    drafts["nightButton"] = it.roundToInt()
+                                    nightButtonGate.submit(it.roundToInt())
+                                },
                                 valueRange = 0f..100f,
                                 colors = SliderDefaults.colors(
                                     thumbColor = Rose500,
@@ -525,7 +564,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         Text("Switches to night mode when ambient light drops below this value", color = Slate400, fontSize = 12.sp)
                         Slider(
                             value = dayToNightThresh.toFloat(),
-                            onValueChange = { viewModel.setDayToNightThreshold(it.roundToInt()) },
+                            onValueChange = {
+                                drafts["dayToNightThresh"] = it.roundToInt()
+                                dayToNightGate.submit(it.roundToInt())
+                            },
                             valueRange = 0f..255f,
                             colors = SliderDefaults.colors(
                                 thumbColor = Purple400,
@@ -547,7 +589,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         Text("Switches back to day mode when ambient light rises above this value", color = Slate400, fontSize = 12.sp)
                         Slider(
                             value = nightToDayThresh.toFloat(),
-                            onValueChange = { viewModel.setNightToDayThreshold(it.roundToInt()) },
+                            onValueChange = {
+                                drafts["nightToDayThresh"] = it.roundToInt()
+                                nightToDayGate.submit(it.roundToInt())
+                            },
                             valueRange = 0f..255f,
                             colors = SliderDefaults.colors(
                                 thumbColor = Amber400,

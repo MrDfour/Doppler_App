@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sandman.doppler.model.DopplerColor
 import com.sandman.doppler.model.DopplerDisplayDots
+import com.sandman.doppler.ui.rememberDragCommitGate
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
 
@@ -29,6 +30,17 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
     val state by viewModel.deviceState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
+
+    // Master volume: the slider previews locally while dragging, but writes are throttled
+    // to one command per settle window so the clock is not flooded.
+    val masterVolume = state?.masterVolume ?: 75
+    var volumeDraft by remember { mutableStateOf<Int?>(null) }
+    val volumeGate = rememberDragCommitGate { viewModel.setVolume(it) }
+
+    // Drop the local preview once the repository's optimistic update echoes it back.
+    LaunchedEffect(volumeDraft, masterVolume) {
+        if (volumeDraft != null && volumeDraft == masterVolume) volumeDraft = null
+    }
 
     Column(
         modifier = Modifier
@@ -266,7 +278,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                         fontSize = 15.sp
                     )
                     Text(
-                        text = "${state?.masterVolume ?: 75}%",
+                        text = "${volumeDraft ?: masterVolume}%",
                         color = Cyan400,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
@@ -274,8 +286,11 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 }
 
                 Slider(
-                    value = (state?.masterVolume ?: 75).toFloat(),
-                    onValueChange = { viewModel.setVolume(it.toInt()) },
+                    value = (volumeDraft ?: masterVolume).toFloat(),
+                    onValueChange = {
+                        volumeDraft = it.toInt()
+                        volumeGate.submit(it.toInt())
+                    },
                     valueRange = 0f..100f,
                     colors = SliderDefaults.colors(
                         thumbColor = Cyan400,
