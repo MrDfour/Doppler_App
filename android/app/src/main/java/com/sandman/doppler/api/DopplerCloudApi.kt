@@ -30,14 +30,16 @@ open class DopplerCloudApi(
     dsn: String,
     protected var cloudAccessToken: String,
     private val refreshTokenProvider: (suspend () -> String?)? = null,
-    customClient: OkHttpClient? = null
+    customClient: OkHttpClient? = null,
+    capabilities: EndpointCapabilities = EndpointCapabilities()
 ) : DopplerLocalApi(
     host = host,
     port = port,
     dsn = dsn,
     localKey = "",
     customClient = customClient,
-    useTls = true
+    useTls = true,
+    capabilities = capabilities
 ) {
     /**
      * Absolute URL for a control-plane path.

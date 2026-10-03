@@ -35,7 +35,11 @@ class DopplerProtocolTest {
             dsn = testDsn,
             localKey = testLocalKey,
             customClient = httpClient,
-            useTls = false
+            useTls = false,
+            // Empty seed: EndpointCapabilities.MEASURED_UNAVAILABLE describes one real
+            // firmware, not this fixture. These tests assert wire schemas, and a path the
+            // measured hardware cannot answer still has a schema worth pinning.
+            capabilities = EndpointCapabilities(seededUnavailable = emptySet())
         )
     }
 

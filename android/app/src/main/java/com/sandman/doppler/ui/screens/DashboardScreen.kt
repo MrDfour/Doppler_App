@@ -119,21 +119,30 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val wifiUnavailable = state?.lacks("hardware/wifi-status") == true
                     Icon(
                         imageVector = Icons.Default.Wifi,
                         contentDescription = "Wi-Fi",
-                        tint = Cyan400,
+                        // Dimmed when the clock will not report it, so the badge does not
+                        // imply a reading it could not obtain.
+                        tint = if (wifiUnavailable) Slate700 else Cyan400,
                         modifier = Modifier.size(20.dp)
                     )
                     Column {
                         Text(
-                            text = state?.wifiSsid?.ifBlank { "Doppler LAN" } ?: "Doppler LAN",
-                            color = Color.White,
+                            text = when {
+                                wifiUnavailable -> "Wi-Fi status unavailable"
+                                else -> state?.wifiSsid?.ifBlank { "Doppler LAN" } ?: "Doppler LAN"
+                            },
+                            color = if (wifiUnavailable) Slate400 else Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
                         )
                         Text(
-                            text = "Signal: ${state?.wifiRssi ?: 0}%",
+                            // `hardware/wifi-status` never answers on the hardware this was
+                            // built against. Previously this rendered "Signal: 0%", a model
+                            // default indistinguishable from a real reading of zero.
+                            text = if (wifiUnavailable) "Not reported by this clock" else "Signal: ${state?.wifiRssi ?: 0}%",
                             color = Slate400,
                             fontSize = 11.sp
                         )

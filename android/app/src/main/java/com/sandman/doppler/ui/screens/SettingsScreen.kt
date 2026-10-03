@@ -295,7 +295,14 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                     // Colon Visible
                     ClockToggleRow(
                         title = "Show Colon",
-                        description = "Display the colon separator between hours and minutes",
+                        description = if (state?.lacks(USE_COLON) == true)
+                            "Writing works, but this clock never reports its colon state back"
+                        else
+                            "Display the colon separator between hours and minutes",
+                        // Deliberately still enabled. `PUT software/use-colon` was verified
+                        // working on hardware (200 in ~400ms) even though the `GET` never
+                        // answers, so the write path is real even though `checked` below is
+                        // only the model default and not a confirmed reading.
                         checked = state?.colonVisible ?: true,
                         onCheckedChange = { viewModel.setUseColon(it) }
                     )
@@ -305,7 +312,9 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         title = "Colon Blink",
                         description = "Blink the colon separator each second",
                         checked = state?.colonBlink ?: true,
-                        onCheckedChange = { viewModel.setColonBlink(it) }
+                        onCheckedChange = { viewModel.setColonBlink(it) },
+                        unavailableNote = state?.takeIf { it.lacks(COLON_BLINK) }
+                            ?.let { "Not reported by this clock (HTTP 408)" }
                     )
                     HorizontalDivider(color = Slate700)
                     // Leading Zero
@@ -313,7 +322,9 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         title = "Leading Zero (24h)",
                         description = "Show leading zero in 24h mode (e.g. 08:00 vs 8:00)",
                         checked = state?.leadingZero24Hour ?: false,
-                        onCheckedChange = { viewModel.setLeadingZero(it) }
+                        onCheckedChange = { viewModel.setLeadingZero(it) },
+                        unavailableNote = state?.takeIf { it.lacks(USE_LEADING_ZERO) }
+                            ?.let { "Not reported by this clock (HTTP 408)" }
                     )
                     HorizontalDivider(color = Slate700)
                     // Fade Time
@@ -321,7 +332,9 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         title = "Fade Transition",
                         description = "Fade digit segments during minute transitions",
                         checked = state?.fadeTimeMode ?: true,
-                        onCheckedChange = { viewModel.setFadeTime(it) }
+                        onCheckedChange = { viewModel.setFadeTime(it) },
+                        unavailableNote = state?.takeIf { it.lacks(USE_FADE_TIME) }
+                            ?.let { "Not reported by this clock (HTTP 408)" }
                     )
                     HorizontalDivider(color = Slate700)
                     // Display Seconds on Mini
@@ -329,7 +342,11 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
                         title = "Show Seconds on Mini Display",
                         description = "Use the secondary 7-segment display to show current seconds",
                         checked = state?.displaySecondsOnMini ?: false,
-                        onCheckedChange = { viewModel.setDisplaySeconds(it) }
+                        onCheckedChange = { viewModel.setDisplaySeconds(it) },
+                        // Broken both ways here: the read 408s and the write is refused with
+                        // HTTP 500, so there is no path to this setting at all.
+                        unavailableNote = state?.takeIf { it.lacks(DISPLAY_SECONDS) }
+                            ?.let { "Unsupported by this clock (read 408, write 500)" }
                     )
                 }
             }
@@ -339,13 +356,38 @@ fun SettingsScreen(viewModel: DopplerViewModel, tokenStore: TokenStore, onReconn
     }
 }
 
+/**
+ * Endpoint paths for the clock behaviour toggles.
+ *
+ * Named rather than inlined so the strings passed to
+ * [com.sandman.doppler.model.DopplerDeviceState.lacks] stay greppable against
+ * `DopplerLocalApi` and `EndpointCapabilities.MEASURED_UNAVAILABLE`. A typo here would
+ * silently disable the honesty check and put a model default back on screen.
+ */
+private const val USE_COLON = "software/use-colon"
+private const val COLON_BLINK = "software/colon-blink"
+private const val USE_LEADING_ZERO = "software/use-leading-zero"
+private const val USE_FADE_TIME = "software/use-fade-time"
+private const val DISPLAY_SECONDS = "software/display-seconds"
+
 @Composable
 private fun ClockToggleRow(
     title: String,
     description: String,
     checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    /**
+     * When set, the control is disabled and this explains why.
+     *
+     * Six endpoints never answer on the hardware this was built against, so four of these
+     * toggles were showing a model default dressed up as the clock's real setting - a switch
+     * in a position the user never chose, with no way to tell it apart from a genuine one.
+     * Probing showed four of them cannot be read at all. Better an honest disabled control
+     * than a plausible wrong one.
+     */
+    unavailableNote: String? = null
 ) {
+    val disabled = unavailableNote != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -354,17 +396,35 @@ private fun ClockToggleRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f).padding(end = 16.dp)) {
-            Text(title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(
+                title,
+                color = if (disabled) Slate400 else Color.White,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp
+            )
             Text(description, color = Slate400, fontSize = 12.sp)
+            if (unavailableNote != null) {
+                Text(
+                    unavailableNote,
+                    color = Amber400,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
         }
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = !disabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Slate950,
                 checkedTrackColor = Cyan400,
                 uncheckedThumbColor = Slate400,
-                uncheckedTrackColor = Slate700
+                uncheckedTrackColor = Slate700,
+                disabledCheckedThumbColor = Slate700,
+                disabledCheckedTrackColor = Slate800,
+                disabledUncheckedThumbColor = Slate700,
+                disabledUncheckedTrackColor = Slate800
             )
         )
     }

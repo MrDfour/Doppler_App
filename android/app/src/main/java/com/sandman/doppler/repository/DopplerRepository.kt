@@ -99,7 +99,14 @@ class DopplerRepository(
 
             // Query basic info
             val info = try { localApi.getDeviceInfo() } catch (e: Exception) { errorsEncountered++; firstException = e; DopplerDeviceInfo() }
-            val wifi = try { localApi.getWifiStatus() } catch (e: Exception) { errorsEncountered++; if (firstException == null) firstException = e; DopplerWifiStatus() }
+            // `hardware/wifi-status` never answers on real hardware (HTTP 408 at ~15s), so it is
+            // caught separately and is NOT counted as an error. Two reasons, both load-bearing:
+            // it is a device limitation rather than a fault, and counting it would contribute
+            // one of the four failures that make this method throw and mark the whole device
+            // offline - over a badge this unit never had.
+            val wifi = try { localApi.getWifiStatus() }
+                catch (e: DopplerException.UnavailableException) { DopplerWifiStatus() }
+                catch (e: Exception) { errorsEncountered++; if (firstException == null) firstException = e; DopplerWifiStatus() }
             val time = try { localApi.getUtcTime() } catch (e: Exception) { errorsEncountered++; if (firstException == null) firstException = e; DopplerUtcTime() }
             val timeMode = try { localApi.getTimeMode() } catch (e: Exception) { errorsEncountered++; if (firstException == null) firstException = e; DopplerTimeMode() }
             val colon = try { localApi.getUseColon() } catch (e: Exception) { DopplerUseColon() }
@@ -185,8 +192,18 @@ class DopplerRepository(
                 syncHighLowColor = syncColor.sync,
                 syncButtonDisplayColor = syncBtnDispColor.sync,
                 alarms = alarms,
-                availableSounds = sounds
+                availableSounds = sounds,
+                // Published so the UI can say "this device does not support this" instead of
+                // rendering the model default that the failed read fell back to.
+                unavailableEndpoints = localApi.capabilities.unavailablePaths
             )
+            // Close the cycle by reporting whether the clock was actually answering. When it
+            // was not, per-endpoint timeouts observed during the cycle are discarded rather
+            // than treated as "this endpoint is dead" - otherwise one network outage would
+            // permanently disable every endpoint on the device. `wifi` is deliberately not
+            // counted in errorsEncountered above (it is unavailable on real hardware), so a
+            // healthy cycle still reports healthy here.
+            localApi.capabilities.endPollCycle(healthy = errorsEncountered == 0)
             _lastError.value = null
         } catch (e: Exception) {
             _lastError.value = e.message ?: "Failed to connect to Doppler"

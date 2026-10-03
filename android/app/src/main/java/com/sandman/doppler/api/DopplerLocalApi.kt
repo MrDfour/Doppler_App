@@ -28,6 +28,18 @@ sealed class DopplerException(message: String, cause: Throwable? = null) : Excep
         cause: Throwable? = null,
         val httpCode: Int? = null
     ) : DopplerException(message, cause)
+    /**
+     * The endpoint exists in the protocol but this clock does not answer it.
+     *
+     * Distinct from [TimeoutException] and [LocalConnectionException] on purpose: those mean
+     * "try again in a moment", whereas this means "this device cannot do this, and asking
+     * again just costs the deadline". Callers must not substitute a model default here, because
+     * a plausible-looking zero is indistinguishable from a real reading to the user.
+     * See [EndpointCapabilities].
+     */
+    class UnavailableException(val path: String) :
+        DopplerException("Endpoint $path does not respond on this device")
+
     class DeviceNotFoundException(message: String) : DopplerException(message)
     class AuthenticationException(message: String) : DopplerException(message)
 }
@@ -48,7 +60,13 @@ open class DopplerLocalApi(
     var localKey: String = "",
     customClient: OkHttpClient? = null,
     // Default true: real Doppler clocks always serve HTTPS (oatpp). Tests may disable.
-    private val useTls: Boolean = true
+    private val useTls: Boolean = true,
+    /**
+     * Injectable for the same reason as [customClient]: a test that only wants to assert a
+     * wire schema needs to opt out of the measured "this endpoint is dead" seed, which
+     * describes real hardware rather than the fixture.
+     */
+    val capabilities: EndpointCapabilities = EndpointCapabilities()
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -82,12 +100,22 @@ open class DopplerLocalApi(
      */
     protected val requestGate = RequestGate()
 
+    /**
+     * Which polled reads this clock actually answers.
+     *
+     * Public because the Diagnostics screen reports it: a skipped endpoint should be visible
+     * to the user as "this device does not support this", not silently absent.
+     */
+
     fun updateCredentials(newHost: String, newPort: Int, newDsn: String, newLocalKey: String) {
         this.host = newHost
         this.port = newPort
         this.dsn = newDsn
         this.localKey = newLocalKey
         tokenManager.invalidateToken()
+        // Learned unavailability belongs to one clock, not to the protocol. A dead LAN unit
+        // must not keep suppressing endpoints that work on the cloud-relayed one.
+        capabilities.resetLearned()
     }
 
     val baseUrl: String
@@ -103,9 +131,77 @@ open class DopplerLocalApi(
      * cycle is uniformly lower priority than a user action. Centralizing it avoids the
      * easy mistake of tagging 22 getters by hand and missing one, which would let a
      * single stray interactive read jump the queue and reintroduce the lag.
+     *
+     * It is also the single choke point for [EndpointCapabilities], which matters: the six
+     * endpoints that never answer on real hardware cost ~15s each, and because requests are
+     * serialized they serialise into ~90s of dead time per poll cycle. Skipping them here -
+     * where every polled read already passes - keeps the fix from depending on any individual
+     * getter being updated.
+     *
+     * @throws DopplerException.UnavailableException when this clock does not answer [path].
+     *   Never swallowed or defaulted, so callers cannot accidentally present an invented
+     *   value as a real reading.
      */
-    protected suspend fun executePollRequest(path: String): String =
-        executeAuthenticatedRequest("GET", path, priority = RequestGate.Priority.BACKGROUND)
+    protected suspend fun executePollRequest(path: String): String {
+        if (capabilities.shouldSkip(path)) {
+            throw DopplerException.UnavailableException(path)
+        }
+        return try {
+            executeAuthenticatedRequest(
+                "GET",
+                path,
+                priority = RequestGate.Priority.BACKGROUND
+            ).also { capabilities.recordSuccess(path) }
+        } catch (e: DopplerException.UnavailableException) {
+            throw e
+        } catch (e: Exception) {
+            if (isEndpointGiveUp(e)) capabilities.recordGiveUp(path)
+            throw e
+        }
+    }
+
+    /**
+     * Whether [e] means "this endpoint is not answering" rather than "the link is down".
+     *
+     * The distinction decides whether the endpoint gets disabled, so it is deliberately
+     * narrow. A cloud outage surfaces as [DopplerException.LocalConnectionException] on all
+     * twenty-two reads at once; treating that as a per-endpoint give-up would silently switch
+     * off the entire device after a bad hotel Wi-Fi minute and never switch it back on. Only
+     * a stalled deadline and an explicit 408 - both of which the clock returns for a handler
+     * that never produces a response - count.
+     */
+    private fun isEndpointGiveUp(e: Exception): Boolean = when {
+        e is DopplerException.ProtocolException ->
+            e.httpCode == EndpointCapabilities.HTTP_REQUEST_TIMEOUT
+        e is DopplerException.LocalConnectionException -> e.causedByStall()
+        else -> false
+    }
+
+    /**
+     * Walks the cause chain for a timeout.
+     *
+     * Both transports wrap every [java.io.IOException] - including
+     * [java.net.SocketTimeoutException] and [java.io.InterruptedIOException] - in
+     * [DopplerException.LocalConnectionException], so the useful signal is only in the cause.
+     */
+    private fun Exception.causedByStall(): Boolean {
+        var current: Throwable? = this
+        var depth = 0
+        while (current != null && depth < MAX_CAUSE_DEPTH) {
+            if (current is java.net.SocketTimeoutException ||
+                current is java.io.InterruptedIOException ||
+                current is java.util.concurrent.TimeoutException
+            ) return true
+            current = current.cause
+            depth++
+        }
+        return false
+    }
+
+    private companion object {
+        /** Guards against a self-referencing cause chain. */
+        const val MAX_CAUSE_DEPTH = 12
+    }
 
     /**
      * Executes an authenticated request against `baseUrl/$dsn/$path`.

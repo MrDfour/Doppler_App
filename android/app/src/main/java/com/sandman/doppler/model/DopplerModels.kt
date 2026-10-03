@@ -405,5 +405,31 @@ data class DopplerDeviceState(
     val weatherEnabled: Boolean = false,
     val weatherLocation: String = "",
     val weatherWakeupTime: String = "06:00",
-    val currentTemperatureF: Int = 72
-)
+    val currentTemperatureF: Int = 72,
+
+    /**
+     * Read endpoints this clock does not answer, e.g. `hardware/wifi-status`.
+     *
+     * These are skipped rather than retried, because six of them stall for ~15s each and
+     * requests are serialized - together that was ~90s of dead time per poll cycle.
+     *
+     * The field exists so a skipped read is not silently presented as a reading. Every
+     * property backed by a path in this set still holds its model **default**, which is
+     * indistinguishable from a real value; UI must check membership here and say
+     * "unavailable" instead. See `EndpointCapabilities` and `STANDALONE_IMPLEMENTATION_PLAN.md`
+     * §2.3 for the silent-default trap this avoids.
+     */
+    val unavailableEndpoints: Set<String> = emptySet()
+) {
+    /**
+     * Whether this clock does not answer the endpoint backing a control.
+     *
+     * UI must ask this before rendering a value or enabling a switch for the matching
+     * property. A property backed by an unavailable endpoint holds its model default, which
+     * looks exactly like a real reading - a "0" signal strength, a `true` colon setting - and
+     * cannot be told apart from one by inspection. See [unavailableEndpoints].
+     *
+     * @param path endpoint path relative to the DSN, e.g. `"software/colon-blink"`.
+     */
+    fun lacks(path: String): Boolean = path in unavailableEndpoints
+}
