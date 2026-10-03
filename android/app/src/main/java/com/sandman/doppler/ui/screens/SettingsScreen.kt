@@ -510,10 +510,12 @@ private fun CloudLoginTab(
                                 onStateUpdate(false, null, "Successfully provisioned ${thing.dsn}!", fetchedThings)
                                 onReconnect()
                             } else {
-                                onStateUpdate(false, "Failed to retrieve localKey for ${thing.dsn}", null, fetchedThings)
+                                val reason = keyRes.exceptionOrNull()?.message ?: "unknown error"
+                                onStateUpdate(false, "Failed to retrieve localKey for ${thing.dsn}: $reason", null, fetchedThings)
                             }
                         } else {
-                            onStateUpdate(false, "Re-authentication failed", null, fetchedThings)
+                            val reason = loginRes.exceptionOrNull()?.message ?: "unknown error"
+                            onStateUpdate(false, "Re-authentication failed: $reason", null, fetchedThings)
                         }
                     }
                 }
@@ -525,6 +527,13 @@ private fun CloudLoginTab(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(text = thing.name ?: "Sandman Doppler", color = Cyan400, fontWeight = FontWeight.Bold)
                         Text(text = "DSN: ${thing.dsn}", color = Color.White, fontSize = 13.sp)
+                        if (!thing.modelNum.isNullOrEmpty() || !thing.firmware.isNullOrEmpty()) {
+                            Text(
+                                text = listOfNotNull(thing.modelNum, thing.firmware).joinToString(" · "),
+                                color = Slate400,
+                                fontSize = 12.sp
+                            )
+                        }
                         if (!thing.ipAddie.isNullOrEmpty()) {
                             Text(text = "IP: ${thing.ipAddie}", color = Slate400, fontSize = 12.sp)
                         }
