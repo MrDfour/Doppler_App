@@ -6,6 +6,7 @@ import com.sandman.doppler.api.DopplerLocalApi
 import com.sandman.doppler.api.EndpointCapabilities
 import com.sandman.doppler.model.DopplerColonBlink
 import com.sandman.doppler.model.DopplerDeviceState
+import com.sandman.doppler.model.DopplerSoundPreset
 import com.sandman.doppler.model.DopplerDeviceInfo
 import com.sandman.doppler.model.DopplerTimeMode
 import com.sandman.doppler.model.DopplerUtcTime
@@ -327,7 +328,7 @@ class UnavailableEndpointHandlingTest {
      */
     private class MockPollApiWithLearnedUnavailable : MockPollApi() {
         init {
-            val path = "software/colon-blink-x"
+            val path = LEARNED_PATH
             repeat(2) {
                 capabilities.recordGiveUp(path)
                 capabilities.endPollCycle(healthy = true)
@@ -335,6 +336,119 @@ class UnavailableEndpointHandlingTest {
         }
 
         override suspend fun getColonBlink(): DopplerColonBlink =
-            throw DopplerException.UnavailableException("software/colon-blink-x")
+            throw DopplerException.UnavailableException(LEARNED_PATH)
+    }
+
+    // ---------- the only way back from a skip ----------
+
+    @Test
+    fun `recheck re-probes so a firmware fix is not hidden forever`() = runBlocking {
+        // The sole escape hatch from a skip. Measured-broken paths are never re-probed on a
+        // timer, so without this a firmware fix would leave the app hiding a control the clock
+        // can now actually perform - permanently, and invisibly.
+        val api = MockPollApiWithRecoverableEndpoint()
+        val repository = DopplerRepository(api)
+        repository.refresh()
+        assertTrue("precondition: learned as unavailable", LEARNED_PATH in api.capabilities.unavailablePaths)
+
+        // The firmware update lands and the endpoint starts answering again.
+        api.recovered = true
+        val probesBefore = api.probes
+
+        repository.recheckUnavailableEndpoints()
+
+        assertTrue("recheck must actually put the endpoint back on the wire", api.probes > probesBefore)
+        assertFalse("a working endpoint must not stay skipped", api.capabilities.shouldSkip(LEARNED_PATH))
+        assertTrue(api.capabilities.unavailablePaths.isEmpty())
+    }
+
+    @Test
+    fun `recheck returns a still-broken endpoint to the skipped set`() = runBlocking {
+        // Recheck is not a permanent pardon. Still-dead endpoints must go back to being
+        // skipped, or the app would resume paying ~15s per cycle for them forever.
+        val api = MockPollApiWithRecoverableEndpoint()
+        val repository = DopplerRepository(api)
+        repository.refresh()
+        repository.refresh()
+        assertTrue("precondition: learned as unavailable", LEARNED_PATH in api.capabilities.unavailablePaths)
+        val probesBefore = api.probes
+
+        repository.recheckUnavailableEndpoints()
+
+        assertTrue("the probe was attempted", api.probes > probesBefore)
+        assertTrue(
+            "still dead, so it belongs back in the skipped set",
+            api.capabilities.shouldSkip(LEARNED_PATH)
+        )
+    }
+
+    @Test
+    fun `recheck leaves working endpoints alone`() = runBlocking {
+        // Volume answered throughout and must stay enabled. Recheck is scoped to paths that
+        // were believed unavailable, not a blanket re-enable of everything.
+        val api = MockPollApiWithRecoverableEndpoint()
+        val repository = DopplerRepository(api)
+        repository.refresh()
+        repository.refresh()
+
+        repository.recheckUnavailableEndpoints()
+        assertFalse(api.capabilities.shouldSkip("hardware/volume"))
+    }
+
+    @Test
+    fun `recheck is a no-op when nothing is unavailable`() = runBlocking {
+        // Guards an early return that would otherwise skip the refresh and leave the screen
+        // stale with nothing to indicate it happened.
+        val api = MockPollApi()
+        val repository = DopplerRepository(api)
+        repository.refresh()
+
+        repository.recheckUnavailableEndpoints()
+        assertTrue(api.capabilities.unavailablePaths.isEmpty())
+    }
+
+    /**
+     * Healthy on every endpoint except one that can be made to start working.
+     *
+     * The capability set is primed through the real API rather than by stubbing the
+     * collection, so the repository's publication path is genuinely exercised.
+     *
+     * [probes] counts attempts, which is the only way to tell "recheck asked the clock again"
+     * from "recheck quietly did nothing" - both leave the endpoint looking unavailable.
+     */
+    private class MockPollApiWithRecoverableEndpoint : MockPollApi() {
+        var probes = 0
+            private set
+
+        /** Flipped to simulate the firmware update that makes the endpoint work. */
+        var recovered = false
+
+        init {
+            repeat(2) {
+                capabilities.recordGiveUp(LEARNED_PATH)
+                capabilities.endPollCycle(healthy = true)
+            }
+        }
+
+        override suspend fun getColonBlink(): DopplerColonBlink {
+            probes++
+            // Mirrors what executePollRequest does around a real request, because overriding
+            // the getter bypasses it. Without the skip check and the give-up record, "the
+            // endpoint stayed dead" and "recheck never asked" look identical.
+            if (capabilities.shouldSkip(LEARNED_PATH)) {
+                throw DopplerException.UnavailableException(LEARNED_PATH)
+            }
+            if (recovered) {
+                capabilities.recordSuccess(LEARNED_PATH)
+                return DopplerColonBlink(true)
+            }
+            capabilities.recordGiveUp(LEARNED_PATH)
+            throw DopplerException.ProtocolException("no response", httpCode = 408)
+        }
+    }
+
+    private companion object {
+        /** Learned at runtime, so deliberately outside the measured seed. */
+        const val LEARNED_PATH = "software/colon-blink-x"
     }
 }

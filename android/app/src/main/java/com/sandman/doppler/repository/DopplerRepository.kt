@@ -356,6 +356,23 @@ class DopplerRepository(
     }
 
     /**
+     * Re-probes every endpoint currently believed unavailable, then refreshes.
+     *
+     * Measured-broken paths are deliberately never re-probed on a timer - six probes at ~15s
+     * each would hand most of the ~90s per cycle that skipping them saves straight back. So
+     * recovery is driven from here instead: the user asks, the app pays the cost once, and
+     * anything still broken returns to the skipped set after
+     * [EndpointCapabilities.GIVE_UPS_BEFORE_SKIP] more give-ups.
+     *
+     * This is also the escape hatch if a firmware update fixes one of these endpoints -
+     * without it the app would keep hiding a control the clock can now actually perform.
+     */
+    suspend fun recheckUnavailableEndpoints() {
+        localApi.capabilities.recheckAll()
+        refresh()
+    }
+
+    /**
      * Probes whether this clock's firmware implements the two custom-display overrides.
      *
      * Dispatches one real PUT per override and classifies the HTTP status, so a dead

@@ -42,6 +42,34 @@ data class DopplerColor(
                 b = num and 0xFF
             )
         }
+
+        /**
+         * Strict hex parse, or `null` when [hex] is not a colour.
+         *
+         * [fromHex] must not be used on user input, for two reasons this avoids:
+         *
+         * - it coerces anything unparseable to `0`, so a typo becomes black instead of being
+         *   rejected - the user picks a colour, sees no error, and the clock goes dark;
+         * - it misreads the short form. `#FFF` parses as `0x000FFF`, a dark teal, rather than
+         *   white, and nothing anywhere reports the discrepancy.
+         *
+         * Accepts `#RRGGBB`, `RRGGBB`, and the three-digit shorthand `#RGB`.
+         */
+        fun fromHexOrNull(hex: String): DopplerColor? {
+            val clean = hex.trim().removePrefix("#")
+            if (clean.length != 6 && clean.length != 3) return null
+            if (!clean.all { it.isHexDigit() }) return null
+            val expanded = if (clean.length == 3) clean.map { "$it$it" }.joinToString("") else clean
+            val num = expanded.toLongOrNull(16)?.toInt() ?: return null
+            return DopplerColor(
+                r = (num shr 16) and 0xFF,
+                g = (num shr 8) and 0xFF,
+                b = num and 0xFF
+            )
+        }
+
+        private fun Char.isHexDigit(): Boolean =
+            this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
     }
 }
 

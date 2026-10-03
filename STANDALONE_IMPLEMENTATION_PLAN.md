@@ -636,27 +636,38 @@ If an agent or session is interrupted by token quotas, network timeouts, or powe
 
 **Blocked on Sandman (server-side, no app fix possible):**
 
-1. **Six polled endpoints return HTTP 408 at ~15s each** (`wifi-status`, `use-colon`,
-   `colon-blink`, `use-leading-zero`, `use-fade-time`, `display-seconds`). ~90s of dead time per
-   poll cycle; the largest remaining latency term. `use-colon` is writable but unreadable.
-2. **`GET /{dsn}/localkey` returns HTTP 408 always.** Automatic LAN provisioning is impossible
+1. **`GET /{dsn}/localkey` returns HTTP 408 always.** Automatic LAN provisioning is impossible
    on affected units, which breaks the "zero external servers" invariant in practice.
-3. **Four endpoints are read-only** (`sound-preset`, `sound-preset-mode`, `day-mode`,
+2. **Four endpoints are read-only** (`sound-preset`, `sound-preset-mode`, `day-mode`,
    `display-seconds`) — HTTP 500 on any write.
-4. **The oatpp daemon did not listen at all** on the probed unit (ICMP yes, no open TCP port).
+3. **The oatpp daemon did not listen at all** on the probed unit (ICMP yes, no open TCP port).
    Root cause unknown.
+
+**Worked around in the app (server fault unchanged — report to Sandman):**
+
+4. **Six polled endpoints return HTTP 408 at ~15s each** (`wifi-status`, `use-colon`,
+   `colon-blink`, `use-leading-zero`, `use-fade-time`, `display-seconds`). This was ~90s of dead
+   time per poll cycle, the largest remaining latency term. `EndpointCapabilities` now skips
+   them, learns at runtime, and re-checks on demand from Diagnostics. The underlying 408s are
+   still there; only the client-side cost is gone. `use-colon` stays writable on purpose.
 
 **Open in the app:**
 
-5. **No custom colour picker.** Five hardcoded presets only, despite §4.2 promising "custom hex
-   input". Endpoints are capable; only the UI is missing.
-6. **Drafts clear on optimistic echo, not hardware confirmation**
-   (`DashboardScreen.kt`, `DisplayLightingScreen.kt`). A silently rejected write still looks
-   successful. `confirmHardware()` covers volume only.
-7. **`cloudAccessToken` takes precedence over LAN** in `buildApi()` whenever it is stored, so a
-   phone on the same network as the clock still routes through the cloud. This is a one-line
-   preference change, deliberately not made without a decision.
-8. **Duplicate alarms may persist on the device.** The create-only POST bug is fixed, but the
+5. **`cloudAccessToken` takes precedence over LAN** in `buildApi()` whenever it is stored, so a
+   phone on the same network as the clock still routes through the cloud. Deliberately not
+   changed: LAN is unusable on the probed unit (no open TCP port), so cloud-first is currently
+   correct for it.
+6. **Duplicate alarms may persist on the device.** The create-only POST bug is fixed, but the
    two identical alarms already written to the clock are still there and need deleting once.
-9. **Doc-vs-code drift elsewhere:** `DragCommitGate.kt:19` KDoc claims mid-drag commits that the
-   trailing-edge implementation does not perform.
+
+**Open questions — not yet bugs, because nothing has been measured:**
+
+7. **Does the firmware clamp or round writes?** `confirmHardware()` reads the value back after
+   a write, but only for volume. If the clock clamps brightness or colour, the UI would show the
+   sent value rather than the accepted one until the next poll corrects it. **Not changed:** no
+   measurement shows clamping happens, and extending read-back to every setter doubles the write
+   traffic on speculation. Worth one experiment: `PUT` an out-of-range brightness, then `GET` it.
+8. **Draft clearing is on optimistic echo, not hardware confirmation.** Re-examined and judged
+   correct as written: the repository applies an optimistic update, rolls back on failure, and the
+   next poll reconciles, so the slider follows authoritative state either way. The draft's job is
+   only to stop the slider fighting the finger during the round trip. Not a defect.

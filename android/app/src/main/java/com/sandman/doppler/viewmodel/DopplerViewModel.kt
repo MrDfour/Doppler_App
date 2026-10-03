@@ -65,6 +65,9 @@ class DopplerViewModel(
     private val _isProbingOverrides = MutableStateFlow(false)
     val isProbingOverrides: StateFlow<Boolean> = _isProbingOverrides
 
+    private val _isRecheckingEndpoints = MutableStateFlow(false)
+    val isRecheckingEndpoints: StateFlow<Boolean> = _isRecheckingEndpoints
+
     init {
         repository.startPolling(intervalMs = 8000L)
     }
@@ -419,6 +422,40 @@ class DopplerViewModel(
                 addLog("ERROR", "Override support probe failed", e.message ?: "")
             } finally {
                 _isProbingOverrides.value = false
+            }
+        }
+    }
+
+    /**
+     * Re-probes the endpoints this clock was measured as not answering.
+     *
+     * Explicit rather than automatic because the whole point of skipping them is to avoid
+     * paying their deadline, so the cost is only worth it when the user asks. Results land in
+     * the log so a firmware fix is visible as evidence rather than a silent behaviour change.
+     */
+    fun recheckUnavailableEndpoints() {
+        if (_isRecheckingEndpoints.value) return
+        val before = repository.deviceState.value?.unavailableEndpoints.orEmpty()
+        if (before.isEmpty()) return
+        viewModelScope.launch {
+            _isRecheckingEndpoints.value = true
+            addLog("PROBE", "Re-checking unavailable endpoints", before.sorted().joinToString("\n"))
+            try {
+                repository.recheckUnavailableEndpoints()
+                val after = repository.deviceState.value?.unavailableEndpoints.orEmpty()
+                addLog(
+                    "PROBE",
+                    "Re-check complete",
+                    if (after.size < before.size) {
+                        "Recovered: " + (before - after).sorted().joinToString(", ")
+                    } else {
+                        "Still unanswered: " + after.sorted().joinToString(", ")
+                    }
+                )
+            } catch (e: Exception) {
+                addLog("ERROR", "Re-check failed", e.message ?: "")
+            } finally {
+                _isRecheckingEndpoints.value = false
             }
         }
     }

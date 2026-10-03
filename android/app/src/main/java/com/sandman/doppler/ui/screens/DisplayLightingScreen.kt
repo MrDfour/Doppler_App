@@ -28,13 +28,8 @@ import kotlin.math.roundToInt
 fun DisplayLightingScreen(viewModel: DopplerViewModel) {
     val state by viewModel.deviceState.collectAsState()
 
-    val presetColors = listOf(
-        "Cyan" to (DopplerColor.CYAN to Cyan400),
-        "Amber" to (DopplerColor.AMBER to Amber400),
-        "Red" to (DopplerColor.DEEP_RED to Rose500),
-        "Emerald" to (DopplerColor.EMERALD to Emerald400),
-        "Purple" to (DopplerColor.PURPLE to Purple400)
-    )
+    // The preset palette now lives with ColorSelector, which also offers free-form RGB.
+    // It was duplicated per screen, so a change to one copy missed the others.
 
     // Current state values with defaults
     val dayDisplayColor = state?.dayDisplayColor ?: DopplerColor.CYAN
@@ -220,66 +215,22 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     // Day Display Color
-                    Text("Display Digits Color", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        presetColors.forEach { (name, pair) ->
-                            val (dopplerColor, composeColor) = pair
-                            val isSelected = dayDisplayColor.r == dopplerColor.r &&
-                                    dayDisplayColor.g == dopplerColor.g &&
-                                    dayDisplayColor.b == dopplerColor.b
-
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(46.dp)
-                                        .clip(CircleShape)
-                                        .background(composeColor)
-                                        .then(
-                                            if (isSelected) Modifier.border(3.dp, Color.White, CircleShape)
-                                            else Modifier
-                                        )
-                                        .clickable { viewModel.setDayColor(dopplerColor) }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(name, color = if (isSelected) Color.White else Slate400, fontSize = 11.sp)
-                            }
-                        }
-                    }
+                    ColorSelector(
+                        current = dayDisplayColor,
+                        onSelect = { viewModel.setDayColor(it) },
+                        label = "Display Digits Color",
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     if (!syncButtonDisplayColor) {
                         HorizontalDivider(color = Slate800)
                         // Day Button Color
-                        Text("Physical Buttons Color", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            presetColors.forEach { (name, pair) ->
-                                val (dopplerColor, composeColor) = pair
-                                val isSelected = dayButtonColor.r == dopplerColor.r &&
-                                        dayButtonColor.g == dopplerColor.g &&
-                                        dayButtonColor.b == dopplerColor.b
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(46.dp)
-                                            .clip(CircleShape)
-                                            .background(composeColor)
-                                            .then(
-                                                if (isSelected) Modifier.border(3.dp, Color.White, CircleShape)
-                                                else Modifier
-                                            )
-                                            .clickable { viewModel.setDayButtonColor(dopplerColor) }
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(name, color = if (isSelected) Color.White else Slate400, fontSize = 11.sp)
-                                }
-                            }
-                        }
+                        ColorSelector(
+                            current = dayButtonColor,
+                            onSelect = { viewModel.setDayButtonColor(it) },
+                            label = "Physical Buttons Color",
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
             }
@@ -307,66 +258,22 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         // Night Display Color
-                        Text("Display Digits Color", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            presetColors.forEach { (name, pair) ->
-                                val (dopplerColor, composeColor) = pair
-                                val isSelected = nightDisplayColor.r == dopplerColor.r &&
-                                        nightDisplayColor.g == dopplerColor.g &&
-                                        nightDisplayColor.b == dopplerColor.b
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(46.dp)
-                                            .clip(CircleShape)
-                                            .background(composeColor)
-                                            .then(
-                                                if (isSelected) Modifier.border(3.dp, Color.White, CircleShape)
-                                                else Modifier
-                                            )
-                                            .clickable { viewModel.setNightColor(dopplerColor) }
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(name, color = if (isSelected) Color.White else Slate400, fontSize = 11.sp)
-                                }
-                            }
-                        }
+                        ColorSelector(
+                            current = nightDisplayColor,
+                            onSelect = { viewModel.setNightColor(it) },
+                            label = "Display Digits Color",
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
                         if (!syncButtonDisplayColor) {
                             HorizontalDivider(color = Slate800)
                             // Night Button Color
-                            Text("Physical Buttons Color", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                presetColors.forEach { (name, pair) ->
-                                    val (dopplerColor, composeColor) = pair
-                                    val isSelected = nightButtonColor.r == dopplerColor.r &&
-                                            nightButtonColor.g == dopplerColor.g &&
-                                            nightButtonColor.b == dopplerColor.b
-
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(46.dp)
-                                                .clip(CircleShape)
-                                                .background(composeColor)
-                                            .then(
-                                                if (isSelected) Modifier.border(3.dp, Color.White, CircleShape)
-                                                else Modifier
-                                            )
-                                            .clickable { viewModel.setNightButtonColor(dopplerColor) }
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(name, color = if (isSelected) Color.White else Slate400, fontSize = 11.sp)
-                                    }
-                                }
-                            }
+                            ColorSelector(
+                                current = nightButtonColor,
+                                onSelect = { viewModel.setNightButtonColor(it) },
+                                label = "Physical Buttons Color",
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
                     }
                 }

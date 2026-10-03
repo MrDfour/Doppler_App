@@ -15,9 +15,12 @@ import kotlinx.coroutines.launch
  *
  * The Doppler's oatpp daemon is single threaded, so dispatching one write per drag
  * frame would queue hundreds of requests behind the user's finger. Every value handed
- * to [submit] replaces the one still waiting, and [commit] runs once the burst has been
- * quiet for [settleDelayMs] - or at most once per window while the user keeps dragging,
- * so the hardware still feels live. The final value of a drag is never dropped.
+ * to [submit] replaces the one still waiting, and [commit] runs [settleDelayMs] after the
+ * *first* edit of a burst, not after the last. That distinction is the whole design: a drag
+ * therefore reaches the hardware roughly every [settleDelayMs] while the finger is still
+ * moving, so it feels live, instead of a single write on release. The final value of a drag
+ * is never dropped - the drain takes the newest value submitted, so whatever the user let go
+ * at is what the clock is left holding.
  *
  * A single consumer coroutine drains the queue, so commands are always serial.
  */

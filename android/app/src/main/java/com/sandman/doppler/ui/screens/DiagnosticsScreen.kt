@@ -38,6 +38,8 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
     val isCloud = viewModel.isCloudControlPlane
     val connectionModeLabel = viewModel.connectionModeLabel
     val telemetry by viewModel.requestTelemetry.collectAsState()
+    val unavailableEndpoints = state?.unavailableEndpoints.orEmpty()
+    val isRechecking by viewModel.isRecheckingEndpoints.collectAsState()
 
     // Cloud latency was misdiagnosed twice from source alone. Sample the real numbers
     // while this screen is open so the next report is measurement, not inference.
@@ -145,6 +147,69 @@ fun DiagnosticsScreen(viewModel: DopplerViewModel) {
                             "requests are stalling.",
                         color = Slate400, fontSize = 11.sp
                     )
+                }
+            }
+        }
+
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Slate900),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Endpoints Not Answering",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    if (unavailableEndpoints.isEmpty()) {
+                        Text(
+                            "All 22 polled endpoints answered the last sweep.",
+                            color = Emerald400,
+                            fontSize = 12.sp
+                        )
+                    } else {
+                        Text(
+                            "These ${unavailableEndpoints.size} of the 22 polled endpoints never " +
+                                "return on this clock, so they are skipped rather than retried - each one " +
+                                "costs roughly 15 seconds and requests are serialized. Controls that depend " +
+                                "on them are disabled in the UI rather than showing an invented default.",
+                            color = Slate400,
+                            fontSize = 12.sp
+                        )
+                        unavailableEndpoints.sorted().forEach { path ->
+                            Text(
+                                text = path,
+                                color = Amber400,
+                                fontSize = 12.sp,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                        Button(
+                            onClick = { viewModel.recheckUnavailableEndpoints() },
+                            enabled = !isRechecking,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Cyan400,
+                                disabledContainerColor = Slate800
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = if (isRechecking) "Re-checking..." else "Re-check These Endpoints",
+                                color = Slate950,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            "Skipped endpoints are never re-probed automatically, because six probes " +
+                                "at 15s each would give back most of what skipping them saves. Use this " +
+                                "after a firmware update to find out whether any have started working.",
+                            color = Slate400,
+                            fontSize = 11.sp
+                        )
+                    }
                 }
             }
         }
