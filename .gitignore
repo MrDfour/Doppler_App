@@ -9,4 +9,5 @@ local.properties
 **/build/
 
 node_modules/
+sandman.xapk
 dist/

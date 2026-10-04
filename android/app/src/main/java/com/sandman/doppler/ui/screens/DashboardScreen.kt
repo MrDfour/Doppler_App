@@ -273,10 +273,13 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     }
                 }
 
-                // Digital Clock Digits reflecting UTC hour/min or format
-                val hour = state?.currentUtcHour ?: 12
-                val min = state?.currentUtcMin ?: 0
-                val formattedTime = String.format("%02d:%02d", hour, min)
+                // Digital Clock Digits reflecting local time using the clock's timezone
+                val utcHour = state?.currentUtcHour ?: 12
+                val utcMin = state?.currentUtcMin ?: 0
+                val zoneId = state?.clockTimezone?.let { java.time.ZoneId.of(it) } ?: java.time.ZoneId.of("UTC")
+                val offsetSeconds = zoneId.rules.getOffset(java.time.Instant.now()).totalSeconds
+                val localHour = ((utcHour + offsetSeconds / 3600) % 24 + 24) % 24
+                val formattedTime = String.format("%02d:%02d", localHour, utcMin)
 
                 Text(
                     text = formattedTime,
@@ -293,7 +296,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = state?.timezone?.ifBlank { stringResource(R.string.utc_time) } ?: stringResource(R.string.utc_time),
+                        text = state?.clockTimezone?.ifBlank { stringResource(R.string.utc_time) } ?: stringResource(R.string.utc_time),
                         color = Slate400,
                         fontSize = 12.sp
                     )
