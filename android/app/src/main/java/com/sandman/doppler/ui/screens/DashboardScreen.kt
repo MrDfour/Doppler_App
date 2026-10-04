@@ -15,21 +15,41 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sandman.doppler.R
 import com.sandman.doppler.model.DopplerColor
 import com.sandman.doppler.model.DopplerDisplayDots
 import com.sandman.doppler.ui.rememberDragCommitGate
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
+import java.util.Locale
 
 @Composable
 fun DashboardScreen(viewModel: DopplerViewModel) {
+    val context = LocalContext.current
     val state by viewModel.deviceState.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val lastError by viewModel.lastError.collectAsState()
+
+    // Language toggle: track current locale and provide a switch
+    var currentLocale by remember { mutableStateOf(Locale.getDefault().language) }
+
+    fun toggleLanguage() {
+        val newLang = if (currentLocale == "en") "es" else "en"
+        currentLocale = newLang
+        val locale = Locale(newLang)
+        Locale.setDefault(locale)
+        val config = context.resources.configuration
+        config.setLocale(locale)
+        context.resources.updateConfiguration(config, context.resources.displayMetrics)
+        // Recreate activity to apply locale change
+        (context as? android.app.Activity)?.recreate()
+    }
 
     // Master volume: the slider previews locally while dragging, but writes are throttled
     // to one command per settle window so the clock is not flooded.
@@ -65,7 +85,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
             ) {
                 Column {
                     Text(
-                        text = state?.name ?: "Sandman Doppler",
+                        text = state?.name ?: stringResource(R.string.app_name),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -75,7 +95,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     // are talking to the clock directly when we are not.
                     Text(
                         text = if (viewModel.isCloudControlPlane) {
-                            "CLOUD CONTROL PLANE • DSN: ${state?.dsn ?: "Unknown"}"
+                            "${stringResource(R.string.cloud)} • DSN: ${state?.dsn ?: "Unknown"}"
                         } else {
                             "${state?.ipAddress?.takeIf { it.isNotBlank() } ?: "unknown host"}:" +
                                 "${state?.port ?: 5443} • DSN: ${state?.dsn ?: "Unknown"}"
@@ -86,6 +106,25 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Language toggle button
+                    Surface(
+                        color = Slate800,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Slate800)
+                            .border(1.dp, Cyan400, RoundedCornerShape(8.dp))
+                    ) {
+                        TextButton(onClick = { toggleLanguage() }) {
+                            Text(
+                                text = if (currentLocale == "en") "ES" else "EN",
+                                color = Cyan400,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
                     Box(
                         modifier = Modifier
                             .size(10.dp)
@@ -95,7 +134,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
+                            contentDescription = stringResource(R.string.refresh),
                             tint = if (isRefreshing) Cyan400 else Slate400
                         )
                     }
@@ -122,7 +161,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     val wifiUnavailable = state?.lacks("hardware/wifi-status") == true
                     Icon(
                         imageVector = Icons.Default.Wifi,
-                        contentDescription = "Wi-Fi",
+                        contentDescription = stringResource(R.string.wifi),
                         // Dimmed when the clock will not report it, so the badge does not
                         // imply a reading it could not obtain.
                         tint = if (wifiUnavailable) Slate700 else Cyan400,
@@ -131,8 +170,8 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     Column {
                         Text(
                             text = when {
-                                wifiUnavailable -> "Wi-Fi status unavailable"
-                                else -> state?.wifiSsid?.ifBlank { "Doppler LAN" } ?: "Doppler LAN"
+                                wifiUnavailable -> stringResource(R.string.wifi_status_unavailable)
+                                else -> state?.wifiSsid?.ifBlank { stringResource(R.string.doppler_lan) } ?: stringResource(R.string.doppler_lan)
                             },
                             color = if (wifiUnavailable) Slate400 else Color.White,
                             fontWeight = FontWeight.SemiBold,
@@ -142,7 +181,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                             // `hardware/wifi-status` never answers on the hardware this was
                             // built against. Previously this rendered "Signal: 0%", a model
                             // default indistinguishable from a real reading of zero.
-                            text = if (wifiUnavailable) "Not reported by this clock" else "Signal: ${state?.wifiRssi ?: 0}%",
+                            text = if (wifiUnavailable) stringResource(R.string.not_reported_by_clock) else "Signal: ${state?.wifiRssi ?: 0}%",
                             color = Slate400,
                             fontSize = 11.sp
                         )
@@ -164,13 +203,13 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 ) {
                     Icon(
                         imageVector = if (isNight) Icons.Default.Nightlight else Icons.Default.WbSunny,
-                        contentDescription = "Mode",
+                        contentDescription = stringResource(R.string.mode),
                         tint = if (isNight) Rose500 else Amber400,
                         modifier = Modifier.size(20.dp)
                     )
                     Column {
                         Text(
-                            text = if (isNight) "Night Mode" else "Day Mode",
+                            text = if (isNight) stringResource(R.string.night_mode) else stringResource(R.string.day_mode),
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
@@ -254,7 +293,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = state?.timezone?.ifBlank { "UTC Time" } ?: "UTC Time",
+                        text = state?.timezone?.ifBlank { stringResource(R.string.utc_time) } ?: stringResource(R.string.utc_time),
                         color = Slate400,
                         fontSize = 12.sp
                     )
@@ -265,7 +304,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                         modifier = Modifier.padding(4.dp)
                     ) {
                         Text(
-                            text = "${state?.masterVolume ?: 75}% Vol",
+                            text = "${state?.masterVolume ?: 75}% ${stringResource(R.string.vol)}",
                             color = activeDisplayColor,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
@@ -289,7 +328,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Master Volume",
+                        text = stringResource(R.string.master_volume),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp
@@ -320,7 +359,7 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
 
         // Quick Action Buttons
         Text(
-            text = "Quick Actions",
+            text = stringResource(R.string.quick_actions),
             color = Color.White,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp
@@ -336,9 +375,9 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Snooze, contentDescription = "Snooze", tint = Amber400, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Snooze, contentDescription = stringResource(R.string.snooze), tint = Amber400, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Snooze", color = Color.White, fontSize = 13.sp)
+                Text(stringResource(R.string.snooze), color = Color.White, fontSize = 13.sp)
             }
 
             Button(
@@ -347,9 +386,9 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.Stop, contentDescription = "Stop Alarm", tint = Rose500, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.Stop, contentDescription = stringResource(R.string.stop_alarm), tint = Rose500, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Stop", color = Color.White, fontSize = 13.sp)
+                Text(stringResource(R.string.stop), color = Color.White, fontSize = 13.sp)
             }
 
             Button(
@@ -366,9 +405,9 @@ fun DashboardScreen(viewModel: DopplerViewModel) {
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.weight(1f)
             ) {
-                Icon(Icons.Default.BrightnessLow, contentDescription = "Blackout", tint = Slate400, modifier = Modifier.size(16.dp))
+                Icon(Icons.Default.BrightnessLow, contentDescription = stringResource(R.string.blackout), tint = Slate400, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Blackout", color = Color.White, fontSize = 13.sp)
+                Text(stringResource(R.string.blackout), color = Color.White, fontSize = 13.sp)
             }
         }
     }

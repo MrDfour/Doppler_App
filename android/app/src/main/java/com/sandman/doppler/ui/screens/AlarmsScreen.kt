@@ -17,11 +17,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.sandman.doppler.R
 import com.sandman.doppler.model.DopplerAlarm
 import com.sandman.doppler.model.DopplerColor
 import com.sandman.doppler.ui.theme.*
@@ -73,7 +75,7 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
                 containerColor = Cyan400,
                 contentColor = Slate950
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Alarm")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_alarm))
             }
         }
     ) { innerPadding ->
@@ -88,13 +90,13 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
             item {
                 Column {
                     Text(
-                        text = "Alarms",
+                        text = stringResource(R.string.alarms),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp
                     )
                     Text(
-                        text = "Manage up to 255 user alarms. Tap an alarm to edit.",
+                        text = stringResource(R.string.alarm_manage_hint),
                         color = Slate400,
                         fontSize = 13.sp
                     )
@@ -121,8 +123,8 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
                                 modifier = Modifier.size(56.dp)
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            Text("No alarms configured", color = Slate400, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-                            Text("Tap + to add your first alarm", color = Slate700, fontSize = 13.sp)
+                            Text(stringResource(R.string.no_alarms_configured), color = Slate400, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                            Text(stringResource(R.string.tap_to_add_alarm), color = Slate700, fontSize = 13.sp)
                         }
                     }
                 }
@@ -141,7 +143,7 @@ fun AlarmsScreen(viewModel: DopplerViewModel) {
                                 repeatDays = alarm.repeatDaysList.toSet(),
                                 sound = alarm.sound,
                                 volume = alarm.volume,
-                        colorPreset = alarm.color?.toDopplerColor() ?: DopplerColor.CYAN,
+                                colorPreset = alarm.color?.toDopplerColor() ?: DopplerColor.CYAN,
                                 status = alarm.status
                             )
                             showDialog = true
@@ -234,9 +236,9 @@ private fun AlarmCard(
                         fontWeight = FontWeight.Bold
                     )
                     val label = when {
-                        alarm.isSystemAlarm -> "System Alarm (Doppler)"
+                        alarm.isSystemAlarm -> stringResource(R.string.system_alarm)
                         alarm.name.isNotBlank() -> alarm.name
-                        else -> "Alarm #${alarm.id}"
+                        else -> "${stringResource(R.string.alarm)} #${alarm.id}"
                     }
                     Text(text = label, color = Slate400, fontSize = 13.sp)
                 }
@@ -246,7 +248,7 @@ private fun AlarmCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     IconButton(onClick = onPreview) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Preview", tint = Cyan400)
+                        Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.preview), tint = Cyan400)
                     }
                     Switch(
                         checked = alarm.isEnabled,
@@ -260,7 +262,7 @@ private fun AlarmCard(
                     )
                     if (!alarm.isSystemAlarm) {
                         IconButton(onClick = onDelete) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Slate400)
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete), tint = Slate400)
                         }
                     }
                 }
@@ -272,7 +274,7 @@ private fun AlarmCard(
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (repeatDays.isEmpty()) {
-                        Text("Once", color = Slate500, fontSize = 12.sp)
+                        Text(stringResource(R.string.once), color = Slate500, fontSize = 12.sp)
                     } else {
                         repeatDays.forEach { day ->
                             Surface(
@@ -357,20 +359,20 @@ private fun AlarmEditDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = if (draft.id == 0) "System Alarm" else if (draft.name.isBlank()) "New Alarm" else draft.name,
+                            text = if (draft.id == 0) stringResource(R.string.system_alarm) else if (draft.name.isBlank()) stringResource(R.string.new_alarm) else draft.name,
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         )
                         IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Slate400)
+                            Icon(Icons.Default.Close, contentDescription = stringResource(R.string.close), tint = Slate400)
                         }
                     }
                 }
 
                 // Time picker - hour/minute numeric
                 item {
-                    Text("Time", color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.time), color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -380,7 +382,7 @@ private fun AlarmEditDialog(
                         // Hour
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(onClick = { hour = (hour + 1) % (if (is24Hour) 24 else 12).also { if (!is24Hour && hour == 0) hour = 11 } }) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Hour +", tint = Cyan400)
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.hour_plus), tint = Cyan400)
                             }
                             Surface(color = Slate800, shape = RoundedCornerShape(12.dp)) {
                                 Text(
@@ -393,7 +395,7 @@ private fun AlarmEditDialog(
                                 )
                             }
                             IconButton(onClick = { hour = (hour - 1 + (if (is24Hour) 24 else 12)) % (if (is24Hour) 24 else 12) }) {
-                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Hour -", tint = Cyan400)
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.hour_minus), tint = Cyan400)
                             }
                         }
 
@@ -403,7 +405,7 @@ private fun AlarmEditDialog(
                         // Minute
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             IconButton(onClick = { minute = (minute + 1) % 60 }) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Min +", tint = Cyan400)
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = stringResource(R.string.min_plus), tint = Cyan400)
                             }
                             Surface(color = Slate800, shape = RoundedCornerShape(12.dp)) {
                                 Text(
@@ -416,7 +418,7 @@ private fun AlarmEditDialog(
                                 )
                             }
                             IconButton(onClick = { minute = (minute - 1 + 60) % 60 }) {
-                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Min -", tint = Cyan400)
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = stringResource(R.string.min_minus), tint = Cyan400)
                             }
                         }
 
@@ -442,8 +444,8 @@ private fun AlarmEditDialog(
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },
-                        label = { Text("Alarm Name (optional)") },
-                        placeholder = { Text("e.g. Wake Up", color = Slate700) },
+                        label = { Text(stringResource(R.string.alarm_name_optional)) },
+                        placeholder = { Text(stringResource(R.string.wake_up_example), color = Slate700) },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Label, contentDescription = null) },
                         colors = textFieldColors,
@@ -453,7 +455,7 @@ private fun AlarmEditDialog(
 
                 // Repeat Days
                 item {
-                    Text("Repeat", color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.repeat), color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(DAYS_OF_WEEK) { day ->
@@ -480,13 +482,13 @@ private fun AlarmEditDialog(
                     }
                     if (repeatDays.isEmpty()) {
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("No repeat — alarm fires once", color = Slate500, fontSize = 12.sp)
+                        Text(stringResource(R.string.no_repeat_alarm_fires_once), color = Slate500, fontSize = 12.sp)
                     }
                 }
 
                 // Sound selector
                 item {
-                    Text("Sound", color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.sound), color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -510,7 +512,7 @@ private fun AlarmEditDialog(
                             onClick = { onPreview(selectedSound) },
                             colors = IconButtonDefaults.filledIconButtonColors(containerColor = Slate800)
                         ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Preview", tint = Cyan400)
+                            Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.preview), tint = Cyan400)
                         }
                     }
 
@@ -557,7 +559,7 @@ private fun AlarmEditDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Alarm Volume", color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(stringResource(R.string.alarm_volume), color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text("$volume%", color = Cyan400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                     Slider(
@@ -574,7 +576,7 @@ private fun AlarmEditDialog(
 
                 // Alarm Color
                 item {
-                    Text("Alarm LED Color", color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(stringResource(R.string.alarm_led_color), color = Cyan400, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -603,7 +605,7 @@ private fun AlarmEditDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Enable Alarm", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(stringResource(R.string.enable_alarm), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
                             checked = status != DopplerAlarm.STATUS_DISABLED,
                             onCheckedChange = {
@@ -631,7 +633,7 @@ private fun AlarmEditDialog(
                             border = androidx.compose.foundation.BorderStroke(1.dp, Slate700),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Text("Cancel")
+                            Text(stringResource(R.string.cancel))
                         }
                         Button(
                             onClick = {
@@ -654,7 +656,7 @@ private fun AlarmEditDialog(
                         ) {
                             Icon(Icons.Default.Save, contentDescription = null, tint = Slate950)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Save Alarm", color = Slate950, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.save_alarm), color = Slate950, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -14,11 +14,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sandman.doppler.R
 import com.sandman.doppler.model.ClockTime
 import com.sandman.doppler.model.PlaceCandidate
 import com.sandman.doppler.model.WeatherMode
@@ -26,24 +28,6 @@ import com.sandman.doppler.model.WeatherProvider
 import com.sandman.doppler.ui.theme.*
 import com.sandman.doppler.viewmodel.DopplerViewModel
 
-/**
- * Weather settings.
- *
- * Built for someone who is not going to read a help page. The three things a person
- * actually wants are on separate, plainly-labelled cards: **is it on**, **where is it
- * looking**, and **what does it show**. Everything else is a detail.
- *
- * Two decisions worth knowing about:
- *
- * The user types a place name or postal code and picks from a list. They are never asked
- * for coordinates and the clock is never sent what they typed. Postal codes are ambiguous
- * between countries - `33980` is both a Mexican postal code and a valid US ZIP - so a raw
- * code sent to the clock resolves in silence against the wrong country.
- *
- * `wsmode` is presented by what it displays, not by its number, because it packs three
- * choices into one integer. The list is grouped by the weather service behind it, and the
- * US-only group is labelled, because those readings cannot resolve a non-US location.
- */
 @Composable
 fun WeatherScreen(viewModel: DopplerViewModel) {
     val state by viewModel.deviceState.collectAsState()
@@ -70,7 +54,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
     ) {
         item {
             Text(
-                "Weather",
+                stringResource(R.string.weather),
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold
@@ -78,14 +62,14 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
         }
 
         item {
-            WeatherCard(title = "Show weather on the clock") {
+            WeatherCard(title = stringResource(R.string.show_weather_on_clock)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        if (enabled) "On" else "Off",
+                        if (enabled) stringResource(R.string.on) else stringResource(R.string.off),
                         color = if (enabled) Emerald400 else Slate400,
                         fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold
@@ -100,7 +84,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
         }
 
         item {
-            WeatherCard(title = "Where is the clock looking?") {
+            WeatherCard(title = stringResource(R.string.where_is_clock_looking)) {
                 if (savedLabel != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Place, contentDescription = null, tint = Cyan400)
@@ -117,8 +101,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
 
                 if (location.isNotBlank() && savedLabel == null) {
                     Text(
-                        "The clock is set to a location this app did not choose, so only " +
-                            "coordinates are known: $location",
+                        stringResource(R.string.clock_set_to_unknown_location, location),
                         color = Amber400,
                         fontSize = 14.sp
                     )
@@ -126,7 +109,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                 }
 
                 Text(
-                    "Type a town, or a postal code. Pick your place from the list.",
+                    stringResource(R.string.type_town_or_postal_code),
                     color = Slate400,
                     fontSize = 15.sp
                 )
@@ -139,13 +122,13 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                     enabled = !searching,
                     singleLine = true,
                     textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp),
-                    label = { Text("Town or postal code", fontSize = 15.sp) },
-                    placeholder = { Text("Chihuahua", fontSize = 18.sp) },
+                    label = { Text(stringResource(R.string.town_or_postal_code), fontSize = 15.sp) },
+                    placeholder = { Text(stringResource(R.string.chihuahua), fontSize = 18.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotBlank()) {
                             IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                Icon(Icons.Default.Clear, contentDescription = stringResource(R.string.clear))
                             }
                         }
                     },
@@ -171,7 +154,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                     Icon(Icons.Default.Search, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        if (searching) "Searching..." else "Search",
+                        if (searching) stringResource(R.string.searching) else stringResource(R.string.search),
                         fontSize = 18.sp
                     )
                 }
@@ -185,10 +168,10 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
 
         if (results.isNotEmpty()) {
             item {
-                WeatherCard(title = "Choose your place") {
+                WeatherCard(title = stringResource(R.string.choose_your_place)) {
                     Text(
-                        if (results.size == 1) "1 match. Tap it to use it."
-                        else "${results.size} places match. Tap the right one.",
+                        if (results.size == 1) stringResource(R.string.one_match)
+                        else stringResource(R.string.places_match, results.size),
                         color = Slate400,
                         fontSize = 15.sp
                     )
@@ -205,14 +188,14 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                         onClick = { viewModel.clearPlaceResults() },
                         modifier = Modifier.heightIn(min = 48.dp)
                     ) {
-                        Text("Cancel", fontSize = 16.sp, color = Slate400)
+                        Text(stringResource(R.string.cancel), fontSize = 16.sp, color = Slate400)
                     }
                 }
             }
         }
 
         item {
-            WeatherCard(title = "What should the clock show?") {
+            WeatherCard(title = stringResource(R.string.what_should_clock_show)) {
                 ModeRow(
                     selectedMode = mode,
                     expanded = modesExpanded,
@@ -223,11 +206,9 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
         }
 
         item {
-            WeatherCard(title = "When should the clock say the forecast?") {
+            WeatherCard(title = stringResource(R.string.when_should_clock_say_forecast)) {
                 Text(
-                    "This is when the clock announces the forecast, like an alarm. " +
-                        "The temperature and the weather picture keep themselves up to date " +
-                        "at all other times.",
+                    stringResource(R.string.forecast_announcement_description),
                     color = Slate400,
                     fontSize = 15.sp
                 )
@@ -239,8 +220,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                     )
                 } else {
                     Text(
-                        "The clock reported \"${state?.weatherWakeupTime}\", which is not a " +
-                            "time this app understands. Set it again to correct it.",
+                        stringResource(R.string.clock_reported_invalid_time, state?.weatherWakeupTime ?: ""),
                         color = Amber400,
                         fontSize = 15.sp
                     )
@@ -252,16 +232,16 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text("Set it to 07:00", fontSize = 18.sp)
+                        Text(stringResource(R.string.set_to_0700), fontSize = 18.sp)
                     }
                 }
             }
         }
 
         item {
-            WeatherCard(title = "Clock time zone") {
+            WeatherCard(title = stringResource(R.string.clock_time_zone)) {
                 Text(
-                    "Which time zone the clock believes it is in.",
+                    stringResource(R.string.which_time_zone_clock_believes),
                     color = Slate400,
                     fontSize = 15.sp
                 )
@@ -275,7 +255,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                     )
                 } else {
                     Text(
-                        "Not reported by the clock.",
+                        stringResource(R.string.not_reported_by_clock),
                         color = Amber400,
                         fontSize = 15.sp
                     )
@@ -283,7 +263,7 @@ fun WeatherScreen(viewModel: DopplerViewModel) {
                 if (savedLabel != null && timezone == null) {
                     Spacer(Modifier.height(10.dp))
                     Text(
-                        "Choosing a place above sets this automatically.",
+                        stringResource(R.string.choosing_place_sets_timezone),
                         color = Slate400,
                         fontSize = 14.sp
                     )
@@ -318,7 +298,6 @@ private fun WeatherCard(
     }
 }
 
-/** One candidate place, large enough to tap confidently. */
 @Composable
 private fun PlaceRow(place: PlaceCandidate, onPick: () -> Unit) {
     Row(
@@ -342,11 +321,10 @@ private fun PlaceRow(place: PlaceCandidate, onPick: () -> Unit) {
                 Text(place.regionLine, color = Slate400, fontSize = 15.sp)
             }
         }
-        Icon(Icons.Default.CheckCircle, contentDescription = "Use this place", tint = Cyan400)
+        Icon(Icons.Default.CheckCircle, contentDescription = stringResource(R.string.use_this_place), tint = Cyan400)
     }
 }
 
-/** Collapsed summary that expands into the full grouped list of readings. */
 @Composable
 private fun ModeRow(
     selectedMode: Int,
@@ -379,7 +357,7 @@ private fun ModeRow(
             }
             Icon(
                 if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (expanded) "Hide the list" else "Show the list",
+                contentDescription = if (expanded) stringResource(R.string.hide_list) else stringResource(R.string.show_list),
                 tint = Slate400
             )
         }
@@ -438,13 +416,6 @@ private fun ModeOption(mode: WeatherMode, selected: Boolean, onSelect: () -> Uni
     }
 }
 
-/**
- * Hour and minute steppers rather than a free-text field.
- *
- * A text box invites "24:00" and a mis-typed digit silently lands the announcement
- * somewhere nobody chose. Steppers cannot express an invalid time, and the buttons are
- * sized for a shaky hand.
- */
 @Composable
 private fun TimeStepper(time: ClockTime, onChange: (String) -> Unit) {
     Column {
@@ -460,13 +431,13 @@ private fun TimeStepper(time: ClockTime, onChange: (String) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             StepperColumn(
-                label = "Hour",
+                label = stringResource(R.string.hour),
                 value = time.hour,
                 onDecrement = { onChange(time.plusMinutes(-60).format()) },
                 onIncrement = { onChange(time.plusMinutes(60).format()) }
             )
             StepperColumn(
-                label = "Minute",
+                label = stringResource(R.string.minute),
                 value = time.minute,
                 onDecrement = { onChange(time.plusMinutes(-5).format()) },
                 onIncrement = { onChange(time.plusMinutes(5).format()) }
@@ -475,12 +446,6 @@ private fun TimeStepper(time: ClockTime, onChange: (String) -> Unit) {
     }
 }
 
-/**
- * One stepper column.
- *
- * A [RowScope] extension because it divides the row's width with `weight`, which is
- * only in scope inside a Row.
- */
 @Composable
 private fun RowScope.StepperColumn(
     label: String,
@@ -494,14 +459,14 @@ private fun RowScope.StepperColumn(
     ) {
         Text(label, color = Slate400, fontSize = 15.sp)
         Spacer(Modifier.height(6.dp))
-        StepperButton(Icons.Default.KeyboardArrowUp, "Increase $label", onIncrement)
+        StepperButton(Icons.Default.KeyboardArrowUp, stringResource(R.string.increase_label, label), onIncrement)
         Text(
             String.format(java.util.Locale.US, "%02d", value),
             color = Color.White,
             fontSize = 30.sp,
             fontWeight = FontWeight.Bold
         )
-        StepperButton(Icons.Default.KeyboardArrowDown, "Decrease $label", onDecrement)
+        StepperButton(Icons.Default.KeyboardArrowDown, stringResource(R.string.decrease_label, label), onDecrement)
     }
 }
 

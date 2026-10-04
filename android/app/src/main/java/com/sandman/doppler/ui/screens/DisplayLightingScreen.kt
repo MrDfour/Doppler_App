@@ -15,9 +15,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sandman.doppler.R
 import com.sandman.doppler.model.DopplerColor
 import com.sandman.doppler.ui.rememberDragCommitGate
 import com.sandman.doppler.ui.theme.*
@@ -88,13 +90,13 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         item {
             Column {
                 Text(
-                    text = "Display & Button Lighting",
+                    text = stringResource(R.string.display_button_lighting),
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp
                 )
                 Text(
-                    text = "Configure independent display and button colors, brightness levels, sync options, and auto-dimming thresholds.",
+                    text = stringResource(R.string.configure_independent_colors),
                     color = Slate400,
                     fontSize = 13.sp
                 )
@@ -104,7 +106,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         // Section: Sync Synchronization Toggles
         item {
             Text(
-                text = "Lighting Synchronization",
+                text = stringResource(R.string.lighting_synchronization),
                 color = Cyan400,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
@@ -128,8 +130,8 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Sync Button & Screen Brightness", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Lock button LEDs to mirror the main display brightness level", color = Slate400, fontSize = 12.sp)
+                            Text(stringResource(R.string.sync_button_screen_brightness), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(stringResource(R.string.lock_button_leds_brightness), color = Slate400, fontSize = 12.sp)
                         }
                         Switch(
                             checked = syncButtonDisplayBrightness,
@@ -152,8 +154,8 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Sync Button & Screen Color", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Lock button LEDs to mirror display color", color = Slate400, fontSize = 12.sp)
+                            Text(stringResource(R.string.sync_button_screen_color), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(stringResource(R.string.lock_button_leds_color), color = Slate400, fontSize = 12.sp)
                         }
                         Switch(
                             checked = syncButtonDisplayColor,
@@ -176,8 +178,8 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Sync Day & Night Color", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text("Use the same color in both day and night modes", color = Slate400, fontSize = 12.sp)
+                            Text(stringResource(R.string.sync_day_night_color), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(stringResource(R.string.use_same_color_day_night), color = Slate400, fontSize = 12.sp)
                         }
                         Switch(
                             checked = syncHighLowColor,
@@ -197,7 +199,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         // Section: Day Mode Colors
         item {
             Text(
-                text = "Day Mode Colors (Sunlight / Ambient > ${nightToDayThresh} Lux)",
+                text = stringResource(R.string.day_mode_colors, nightToDayThresh),
                 color = Amber400,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
@@ -218,7 +220,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                     ColorSelector(
                         current = dayDisplayColor,
                         onSelect = { viewModel.setDayColor(it) },
-                        label = "Display Digits Color",
+                        label = stringResource(R.string.display_digits_color),
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -228,7 +230,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         ColorSelector(
                             current = dayButtonColor,
                             onSelect = { viewModel.setDayButtonColor(it) },
-                            label = "Physical Buttons Color",
+                            label = stringResource(R.string.physical_buttons_color),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -240,7 +242,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         if (!syncHighLowColor) {
             item {
                 Text(
-                    text = "Night Mode Colors (Ambient < ${dayToNightThresh} Lux)",
+                    text = stringResource(R.string.night_mode_colors, dayToNightThresh),
                     color = Purple400,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp
@@ -261,7 +263,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         ColorSelector(
                             current = nightDisplayColor,
                             onSelect = { viewModel.setNightColor(it) },
-                            label = "Display Digits Color",
+                            label = stringResource(R.string.display_digits_color),
                             modifier = Modifier.fillMaxWidth()
                         )
 
@@ -271,7 +273,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             ColorSelector(
                                 current = nightButtonColor,
                                 onSelect = { viewModel.setNightButtonColor(it) },
-                                label = "Physical Buttons Color",
+                                label = stringResource(R.string.physical_buttons_color),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -283,7 +285,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         // Section: Brightness Controls
         item {
             Text(
-                text = "Brightness Levels",
+                text = stringResource(R.string.brightness_levels),
                 color = Cyan400,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
@@ -306,7 +308,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Day Display Brightness", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(stringResource(R.string.day_display_brightness), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text("$dayDisplayBrightness%", color = Amber400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         Slider(
@@ -330,7 +332,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Night Display Brightness", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(stringResource(R.string.night_display_brightness), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text("$nightDisplayBrightness%", color = Purple400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                         Slider(
@@ -357,7 +359,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Day Buttons Brightness", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Text(stringResource(R.string.day_buttons_brightness), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                                 Text("$dayButtonBrightness%", color = Cyan400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                             Slider(
@@ -381,7 +383,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Night Buttons Brightness", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                                Text(stringResource(R.string.night_buttons_brightness), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                                 Text("$nightButtonBrightness%", color = Rose500, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             }
                             Slider(
@@ -406,7 +408,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         // Section: Auto-Dimming Ambient Thresholds
         item {
             Text(
-                text = "Auto-Dimming Lux Thresholds",
+                text = stringResource(R.string.auto_dimming_lux_thresholds),
                 color = Emerald400,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp
@@ -429,8 +431,8 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("Current Ambient Reading", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
-                            Text("Top hardware light sensor", color = Slate400, fontSize = 12.sp)
+                            Text(stringResource(R.string.current_ambient_reading), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(stringResource(R.string.top_hardware_light_sensor), color = Slate400, fontSize = 12.sp)
                         }
                         Surface(
                             color = Slate800,
@@ -448,7 +450,7 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Text(
-                                    text = "$currentLux Lux (${if (isNightMode) "Night" else "Day"})",
+                                    text = "$currentLux Lux (${if (isNightMode) stringResource(R.string.night_mode) else stringResource(R.string.day)})",
                                     color = if (isNightMode) Purple400 else Amber400,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp
@@ -465,10 +467,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Day ➔ Night Threshold", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(stringResource(R.string.day_night_threshold), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text("$dayToNightThresh Lux", color = Purple400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
-                        Text("Switches to night mode when ambient light drops below this value", color = Slate400, fontSize = 12.sp)
+                        Text(stringResource(R.string.switches_night_below), color = Slate400, fontSize = 12.sp)
                         Slider(
                             value = dayToNightThresh.toFloat(),
                             onValueChange = {
@@ -490,10 +492,10 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text("Night ➔ Day Threshold", color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
+                            Text(stringResource(R.string.night_day_threshold), color = Color.White, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                             Text("$nightToDayThresh Lux", color = Amber400, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
-                        Text("Switches back to day mode when ambient light rises above this value", color = Slate400, fontSize = 12.sp)
+                        Text(stringResource(R.string.switches_day_above), color = Slate400, fontSize = 12.sp)
                         Slider(
                             value = nightToDayThresh.toFloat(),
                             onValueChange = {
@@ -513,4 +515,3 @@ fun DisplayLightingScreen(viewModel: DopplerViewModel) {
         }
     }
 }
-

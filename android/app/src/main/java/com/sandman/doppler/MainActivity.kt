@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import com.sandman.doppler.api.CopilotCloudAuthClient
 import com.sandman.doppler.api.DopplerCloudApi
 import com.sandman.doppler.api.DopplerLocalApi
@@ -88,44 +89,44 @@ class MainActivity : ComponentActivity() {
                             NavigationBarItem(
                                 selected = selectedTab == 0,
                                 onClick = { selectedTab = 0 },
-                                icon = { Icon(Icons.Default.Dashboard, contentDescription = "Dashboard") },
-                                label = { Text("Dashboard") }
+                                icon = { Icon(Icons.Default.Dashboard, contentDescription = stringResource(R.string.dashboard)) },
+                                label = { Text(stringResource(R.string.dashboard)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 1,
                                 onClick = { selectedTab = 1 },
-                                icon = { Icon(Icons.Default.Lightbulb, contentDescription = "Lighting") },
-                                label = { Text("Lighting") }
+                                icon = { Icon(Icons.Default.Lightbulb, contentDescription = stringResource(R.string.lighting)) },
+                                label = { Text(stringResource(R.string.lighting)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 2,
                                 onClick = { selectedTab = 2 },
-                                icon = { Icon(Icons.Default.Alarm, contentDescription = "Alarms") },
-                                label = { Text("Alarms") }
+                                icon = { Icon(Icons.Default.Alarm, contentDescription = stringResource(R.string.alarms)) },
+                                label = { Text(stringResource(R.string.alarms)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 3,
                                 onClick = { selectedTab = 3 },
-                                icon = { Icon(Icons.Default.Stars, contentDescription = "Lightbar") },
-                                label = { Text("Lightbar") }
+                                icon = { Icon(Icons.Default.Stars, contentDescription = stringResource(R.string.lightbar)) },
+                                label = { Text(stringResource(R.string.lightbar)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 4,
                                 onClick = { selectedTab = 4 },
-                                icon = { Icon(Icons.Default.Cloud, contentDescription = "Weather") },
-                                label = { Text("Weather") }
+                                icon = { Icon(Icons.Default.Cloud, contentDescription = stringResource(R.string.weather)) },
+                                label = { Text(stringResource(R.string.weather)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 5,
                                 onClick = { selectedTab = 5 },
-                                icon = { Icon(Icons.Default.Settings, contentDescription = "Settings") },
-                                label = { Text("Settings") }
+                                icon = { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings)) },
+                                label = { Text(stringResource(R.string.settings)) }
                             )
                             NavigationBarItem(
                                 selected = selectedTab == 6,
                                 onClick = { selectedTab = 6 },
-                                icon = { Icon(Icons.Default.Info, contentDescription = "Diagnostics") },
-                                label = { Text("Info") }
+                                icon = { Icon(Icons.Default.Info, contentDescription = stringResource(R.string.info)) },
+                                label = { Text(stringResource(R.string.info)) }
                             )
                         }
                     }
