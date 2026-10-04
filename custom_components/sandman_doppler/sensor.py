@@ -1,4 +1,4 @@
-"""Sensor platform for Doppler Sandman."""
+"""Sensor platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
-from doppyler.const import ATTR_LIGHT_SENSOR_VALUE, ATTR_WEATHER, ATTR_WIFI
-from doppyler.model.doppler import Doppler
+from .const import ATTR_LIGHT_SENSOR_VALUE, ATTR_WEATHER, ATTR_WIFI
+from .clock import CloudDoppler
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -33,7 +33,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerSensorEntityDescription(SensorEntityDescription):
-    """Class describing Doppler sensor entities."""
+    """Class describing CloudDoppler sensor entities."""
 
     state_key: str | None = None
     state_func: Callable[[Any], Any] | None = None
@@ -92,8 +92,8 @@ async def async_setup_entry(
     """Setup sensor platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler sensor entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler sensor entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -111,7 +111,7 @@ async def async_setup_entry(
 
 
 class DopplerSensor(DopplerEntity[DopplerSensorEntityDescription], SensorEntity):
-    """Doppler sensor class."""
+    """CloudDoppler sensor class."""
 
     @property
     def icon(self) -> str | None:
@@ -132,7 +132,7 @@ class DopplerSensor(DopplerEntity[DopplerSensorEntityDescription], SensorEntity)
 
 
 # class DopplerAlarmsSensor(DopplerEntity,SensorEntity):
-#     """Doppler Alarms Sensor class."""
+#     """CloudDoppler Alarms Sensor class."""
 
 #     _attr_state_class = SensorStateClass.MEASUREMENT
 

@@ -1,4 +1,4 @@
-"""Select platform for Doppler Sandman."""
+"""Select platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from enum import Enum
 from typing import Any
 import zoneinfo
 
-from doppyler.const import (
+from .const import (
     ATTR_SOUND_PRESET,
     ATTR_TIME_MODE,
     ATTR_TIMEZONE,
     ATTR_WEATHER,
 )
-from doppyler.model.doppler import Doppler
-from doppyler.model.sound import SoundPreset
-from doppyler.model.weather import WeatherMode
+from .clock import CloudDoppler
+from .models import SoundPreset
+from .models import WeatherMode
 
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.config_entries import ConfigEntry
@@ -33,22 +33,22 @@ from .helpers import get_enum_from_name, normalize_enum_name
 
 @dataclass
 class DopplerEnumSelectEntityDescription(SelectEntityDescription):
-    """Doppler Enum Select Entity Description."""
+    """CloudDoppler Enum Select Entity Description."""
 
     enum_cls: Enum | None = None
     state_key: str | None = None
     state_func: Callable[[Any], int] = lambda x: x
-    set_value_func: Callable[[Doppler, int], Coroutine[Any, Any, Enum]] = None
+    set_value_func: Callable[[CloudDoppler, int], Coroutine[Any, Any, Enum]] = None
 
 
 @dataclass
 class DopplerSelectEntityDescription(SelectEntityDescription):
-    """Class to describe Doppler select entities."""
+    """Class to describe CloudDoppler select entities."""
 
     state_key: str | None = None
-    options_func: Callable[[Doppler], list[str]] = None
+    options_func: Callable[[CloudDoppler], list[str]] = None
     state_func: Callable[[Any], str] = lambda x: str(x)
-    set_value_func: Callable[[Doppler, str], Coroutine[Any, Any, Any]] = None
+    set_value_func: Callable[[CloudDoppler, str], Coroutine[Any, Any, Any]] = None
 
 
 ENUM_SELECT_ENTITY_DESCRIPTIONS = [
@@ -101,8 +101,8 @@ async def async_setup_entry(
     """Setup select platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler select entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler select entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -128,7 +128,7 @@ async def async_setup_entry(
 class DopplerEnumSelect(
     DopplerEntity[DopplerEnumSelectEntityDescription], SelectEntity
 ):
-    """Doppler Select class for enum attributes."""
+    """CloudDoppler Select class for enum attributes."""
 
     @property
     def options(self) -> list[str]:
@@ -155,7 +155,7 @@ class DopplerEnumSelect(
 
 
 class DopplerSelect(DopplerEntity[DopplerSelectEntityDescription], SelectEntity):
-    """Doppler Select class."""
+    """CloudDoppler Select class."""
 
     @property
     def options(self) -> list[str]:

@@ -88,6 +88,26 @@ class EndpointUnavailableError(DopplerError):
     """
 
 
+class UnsupportedEndpointError(DopplerError):
+    """Raised for an endpoint that is not part of the Sandman Doppler protocol.
+
+    Separate from :class:`EndpointUnavailableError`, which means "this firmware is too
+    old". This means the route was never real: ``hardware/display-dots``,
+    ``hardware/display-text`` and ``hardware/small-display-digits`` answer ``200`` and
+    change nothing, but they appear in neither the vendor app nor ``doppyler``. They were
+    invented. Failing loudly is more honest than sending a request that cannot work.
+    """
+
+    def __init__(self, path: str, feature: str) -> None:
+        """Record which endpoint and which feature it was supposed to drive."""
+        super().__init__(
+            f"{feature} is not supported: {path} is not a Sandman Doppler endpoint. "
+            "The official app never uses it and the clock ignores it."
+        )
+        self.path = path
+        self.feature = feature
+
+
 def is_endpoint_available(path: str) -> bool:
     """Return whether *path* is worth polling on this firmware.
 
@@ -367,6 +387,34 @@ class CloudTransport:
                     f"{method} {path} returned HTTP {status}: {body!r}"
                 )
         raise DopplerConnectionError(f"{method} {path} could not be completed")
+
+    async def async_delete(self, path: str) -> dict[str, Any]:
+        """DELETE a device endpoint and return the decoded body.
+
+        Args:
+            path: Path relative to the device.
+
+        Returns:
+            The decoded JSON body.
+
+        Raises:
+            EndpointUnavailableError: The endpoint is known not to exist here.
+            DopplerConnectionError: The request failed.
+        """
+        if not is_endpoint_available(path):
+            raise EndpointUnavailableError(f"{path} cannot be used on this firmware")
+        async with self._semaphore:
+            await self._ensure_token()
+            status, body = await self._raw_request(
+                "DELETE", f"{BASE_SANDMAN_API_URL}/{self.dsn}/{path}"
+            )
+            if status in (200, 201, 204):
+                return body if isinstance(body, dict) else {}
+            if status == 404:
+                raise EndpointUnavailableError(f"{path} is not routed on this model")
+            raise DopplerConnectionError(
+                f"DELETE {path} returned HTTP {status}: {body!r}"
+            )
 
     # ----------------------------------------------------------- discovery
 

@@ -1,10 +1,10 @@
-"""Doppler light platform."""
+"""CloudDoppler light platform."""
 
 from __future__ import annotations
 
 from typing import Any, Generic, TypeVar
 
-from doppyler.model.doppler import Doppler
+from .clock import CloudDoppler
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity import DeviceInfo, EntityDescription
@@ -20,7 +20,7 @@ _EntityDescriptionT = TypeVar("_EntityDescriptionT", bound="EntityDescription")
 class DopplerEntity(
     CoordinatorEntity[DopplerDataUpdateCoordinator], Generic[_EntityDescriptionT]
 ):
-    """Base class for a Doppler entity."""
+    """Base class for a CloudDoppler entity."""
 
     _attr_has_entity_name = True
 
@@ -28,7 +28,7 @@ class DopplerEntity(
         self,
         coordinator: DopplerDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        device: Doppler,
+        device: CloudDoppler,
         description: _EntityDescriptionT,
     ):
         super().__init__(coordinator)

@@ -31,6 +31,8 @@ from .cloud import (
     EndpointUnavailableError,
     is_endpoint_available,
 )
+from .cloud import UnsupportedEndpointError
+from .models import Alarm, Color, WeatherConfiguration, WeatherMode
 from .const import (
     ATTR_ALARM_SOUNDS,
     ATTR_ALARMS,
@@ -136,38 +138,6 @@ def _as_bool(value: Any) -> bool | None:
     return None
 
 
-@dataclass(frozen=True)
-class Color:
-    """An RGB colour as the platforms consume it.
-
-    The colour endpoints answer ``{"color": [r, g, b]}``, but ``light.py`` reads
-    ``.red``/``.green``/``.blue`` off the coordinator value. Returning the raw list
-    therefore breaks the light platform with ``'list' object has no attribute 'red'``.
-    """
-
-    red: int
-    green: int
-    blue: int
-
-    @classmethod
-    def from_wire(cls, value: Any) -> "Color | None":
-        """Build from a wire value, returning ``None`` for anything unusable.
-
-        Args:
-            value: Expected to be ``[r, g, b]``. Short, long or malformed lists and
-                non-lists all yield ``None`` rather than raising.
-        """
-        if isinstance(value, (list, tuple)):
-            parts = [_as_int(v) for v in value]
-            if len(parts) == 3 and all(p is not None for p in parts):
-                return cls(parts[0], parts[1], parts[2])  # type: ignore[arg-type]
-        return None
-
-    def as_list(self) -> list[int]:
-        """Return the colour as ``[r, g, b]``."""
-        return [self.red, self.green, self.blue]
-
-
 def _as_timedelta_minutes(value: Any) -> Any:
     """Convert a wire offset in minutes to a ``timedelta``.
 
@@ -178,39 +148,25 @@ def _as_timedelta_minutes(value: Any) -> Any:
     return None if minutes is None else timedelta(minutes=minutes)
 
 
-@dataclass(frozen=True)
-class WeatherConfiguration:
-    """Weather settings as the platforms consume them.
-
-    ``select.py`` reads ``.mode`` and passes it through ``normalize_enum_name``, so
-    ``mode`` should be a ``doppyler.model.weather.WeatherMode`` member for the option
-    list to line up. That import is deferred and optional: this module is imported by
-    tests that run on Windows, where doppyler is not installed, and there the raw integer
-    is kept instead.
-    """
-
-    enabled: bool | None
-    location: str | None
-    mode: Any
-
-
 def _as_weather_config(value: Any) -> "WeatherConfiguration | None":
-    """Build a :class:`WeatherConfiguration` from a ``software/weather`` body."""
+    """Build a :class:`WeatherConfiguration` from a ``software/weather`` body.
+
+    ``select.py`` matches the option list against ``WeatherMode`` members, so ``mode`` is
+    resolved to the enum rather than left as an integer.
+    """
     if not isinstance(value, dict):
         return None
-    mode = _as_int(value.get("wsmode"))
-    resolved: Any = mode
-    if mode is not None:
-        try:  # pragma: no cover - depends on the environment
-            from doppyler.model.weather import WeatherMode
-
-            resolved = WeatherMode(mode)
-        except Exception:  # pragma: no cover - doppyler absent, or unknown mode
-            resolved = mode
+    mode_value = _as_int(value.get("wsmode"))
+    mode: Any = mode_value
+    if mode_value is not None:
+        try:
+            mode = WeatherMode(mode_value)
+        except ValueError:
+            mode = mode_value
     return WeatherConfiguration(
         enabled=_as_bool(value.get("wsonoff")),
         location=value.get("location"),
-        mode=resolved,
+        mode=mode,
     )
 
 
@@ -306,16 +262,16 @@ READ_SPECS: tuple[ReadSpec, ...] = (
         ATTR_SYNC_DAY_AND_NIGHT_COLOR, "hardware/sync-high-low-color", "sync", _as_bool
     ),
     ReadSpec(
-        ATTR_DAY_DISPLAY_COLOR, "hardware/high-display-color", "color", Color.from_wire
+        ATTR_DAY_DISPLAY_COLOR, "hardware/high-display-color", "color", Color.from_list
     ),
     ReadSpec(
-        ATTR_DAY_BUTTON_COLOR, "hardware/high-button-color", "color", Color.from_wire
+        ATTR_DAY_BUTTON_COLOR, "hardware/high-button-color", "color", Color.from_list
     ),
     ReadSpec(
-        ATTR_NIGHT_DISPLAY_COLOR, "hardware/low-display-color", "color", Color.from_wire
+        ATTR_NIGHT_DISPLAY_COLOR, "hardware/low-display-color", "color", Color.from_list
     ),
     ReadSpec(
-        ATTR_NIGHT_BUTTON_COLOR, "hardware/low-button-color", "color", Color.from_wire
+        ATTR_NIGHT_BUTTON_COLOR, "hardware/low-button-color", "color", Color.from_list
     ),
     ReadSpec(ATTR_WEATHER, "software/weather", None, _as_weather_config),
     ReadSpec(
@@ -402,12 +358,12 @@ class CloudDoppler:
                     f"{ATTR_SMART_BUTTON_COLOR}_{index}",
                     f"hardware/button{index}",
                     "color",
-                    Color.from_wire,
+                    Color.from_list,
                 )
             )
         return data
 
-    async def get_all_alarms(self) -> dict[int, Any]:
+    async def get_all_alarms(self) -> dict[int, "Alarm"]:
         """Fetch every alarm, keyed by id.
 
         Returns:
@@ -421,8 +377,158 @@ class CloudDoppler:
         alarms = body.get("alarms") if isinstance(body, dict) else None
         if not isinstance(alarms, list):
             return {}
+        parsed = {}
+        for entry in alarms:
+            alarm = Alarm.from_dict(entry)
+            if alarm is not None:
+                parsed[alarm.id] = alarm
         # Sorted by id: the clock returns the list unsorted, with new alarms first.
-        return {a["id"]: a for a in sorted(alarms, key=lambda a: a.get("id", 0))}
+        return dict(sorted(parsed.items()))
+
+    async def add_alarm(self, alarm: "Alarm") -> int | None:
+        """Create an alarm and return the id the clock assigned.
+
+        The clock assigns the id and ignores whatever is sent, so the returned id is the
+        only trustworthy one. Sending an existing id creates a duplicate -- which is
+        exactly the bug this project already shipped once.
+
+        Returns:
+            The new alarm's id, or ``None`` if the clock did not answer.
+        """
+        payload = alarm.to_dict()
+        payload.pop("id", None)
+        try:
+            body = await self._transport.async_write("POST", "alarms", payload)
+        except (DopplerConnectionError, EndpointUnavailableError) as err:
+            _LOGGER.debug("%s: add_alarm failed: %s", self.dsn, err)
+            return None
+        # The clock answers with the whole list, new alarm first and unsorted.
+        alarms = body.get("alarms") if isinstance(body, dict) else None
+        if isinstance(alarms, list) and alarms:
+            created = Alarm.from_dict(alarms[0])
+            return None if created is None else created.id
+        return None
+
+    async def update_alarm(self, alarm_id: int, alarm: "Alarm") -> bool:
+        """Update an existing alarm in place.
+
+        Uses ``PUT /alarms/{id}``. ``PUT /alarms`` without an id is a 404, and ``POST``
+        would create a duplicate instead.
+
+        Returns:
+            Whether the clock accepted the update.
+        """
+        payload = alarm.to_dict()
+        payload["id"] = alarm_id
+        try:
+            await self._transport.async_write("PUT", f"alarms/{alarm_id}", payload)
+        except (DopplerConnectionError, EndpointUnavailableError) as err:
+            _LOGGER.debug("%s: update_alarm %s failed: %s", self.dsn, alarm_id, err)
+            return False
+        return True
+
+    async def delete_alarm(self, alarm_id: int) -> bool:
+        """Delete an alarm.
+
+        Returns:
+            Whether the clock accepted the deletion.
+        """
+        try:
+            await self._transport.async_delete(f"alarms/{alarm_id}")
+        except (DopplerConnectionError, EndpointUnavailableError) as err:
+            _LOGGER.debug("%s: delete_alarm %s failed: %s", self.dsn, alarm_id, err)
+            return False
+        return True
+
+    async def set_weather_location(
+        self, location: str, mode: Any = None, enabled: bool | None = None
+    ) -> bool:
+        """Replace the weather configuration.
+
+        ``PUT`` replaces the whole document, so a partial write cannot exist: the current
+        values are read first and merged.
+
+        Args:
+            location: Free-form location. Send coordinates, not a postal code -- the clock
+                validates nothing and an ambiguous postal code silently returns the wrong
+                country's weather.
+            mode: A :class:`~.models.WeatherMode`, or ``None`` to keep the current mode.
+            enabled: Whether weather is on, or ``None`` to keep the current value.
+
+        Returns:
+            Whether the clock accepted the write.
+        """
+        current = await self._read(
+            ReadSpec(ATTR_WEATHER, "software/weather", None, _as_weather_config)
+        )
+        payload: dict[str, Any] = {
+            "wsonoff": current.enabled if enabled is None else enabled,
+            "location": location,
+            "wsmode": int(current.mode) if mode is None else int(mode),
+        }
+        try:
+            await self._transport.async_write("PUT", "software/weather", payload)
+        except (DopplerConnectionError, EndpointUnavailableError) as err:
+            _LOGGER.debug("%s: set_weather_location failed: %s", self.dsn, err)
+            return False
+        return True
+
+    async def set_rainbow_mode(self, config: Any) -> bool:
+        """Set the 29-LED lightbar's rainbow animation.
+
+        Targets ``software/use-rainbow-display``, which is what the vendor app uses. The
+        older ``hardware/display-dots`` path is not part of the protocol.
+
+        Returns:
+            Whether the clock accepted the write.
+        """
+        speed = getattr(config, "speed", None)
+        mode = getattr(config, "mode", None)
+        payload = {
+            "speed": 0 if speed is None else int(speed),
+            "mode": getattr(mode, "value", mode),
+        }
+        try:
+            await self._transport.async_write(
+                "PUT", "software/use-rainbow-display", payload
+            )
+        except (DopplerConnectionError, EndpointUnavailableError) as err:
+            _LOGGER.debug("%s: set_rainbow_mode failed: %s", self.dsn, err)
+            return False
+        return True
+
+    async def set_main_display_text(self, config: Any) -> bool:
+        """Rejected: scrolling text is not a Doppler feature.
+
+        ``hardware/display-text`` answers ``200`` and renders nothing, and it appears in
+        neither the vendor app nor ``doppyler``.
+
+        Raises:
+            UnsupportedEndpointError: Always.
+        """
+        raise UnsupportedEndpointError("hardware/display-text", "Main display text")
+
+    async def set_mini_display_number(self, config: Any) -> bool:
+        """Rejected: the mini display number override is not a Doppler feature.
+
+        Raises:
+            UnsupportedEndpointError: Always.
+        """
+        raise UnsupportedEndpointError(
+            "hardware/small-display-digits", "Mini display number"
+        )
+
+    async def set_light_bar_effect(self, effect: Any) -> bool:
+        """Rejected: ``hardware/display-dots`` is not a Doppler endpoint.
+
+        Measured: five payload shapes returned ``200`` and the 29-LED bar never changed,
+        while the sixth returned ``417``. The route the vendor app uses for the lightbar is
+        ``software/use-rainbow-display``, reachable through :meth:`set_rainbow_mode`.
+
+        Raises:
+            UnsupportedEndpointError: Always.
+        """
+        raise UnsupportedEndpointError("hardware/display-dots", "Light bar effects")
 
     async def get_smart_button_configuration(self, button_num: int) -> dict[str, Any]:
         """Read one smart button's stored configuration.

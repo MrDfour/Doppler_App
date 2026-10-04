@@ -1,4 +1,4 @@
-"""Siren platform for Doppler Sandman."""
+"""Siren platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import logging
 from random import randint
 from typing import Any
 
-from doppyler.const import ATTR_ALARM_SOUNDS
-from doppyler.model.doppler import Doppler
+from .const import ATTR_ALARM_SOUNDS
+from .clock import CloudDoppler
 
 from homeassistant.components.siren import (
     ATTR_TONE,
@@ -32,11 +32,13 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerSirenEntityDescription(SirenEntityDescription):
-    """Class to describe Doppler siren entities."""
+    """Class to describe CloudDoppler siren entities."""
 
     available_tones_key: str = None
-    turn_on_func: Callable[[Doppler, str, int | None], Coroutine[Any, Any, None]] = None
-    turn_off_func: Callable[[Doppler], Coroutine[Any, Any, None]] = None
+    turn_on_func: Callable[
+        [CloudDoppler, str, int | None], Coroutine[Any, Any, None]
+    ] = None
+    turn_off_func: Callable[[CloudDoppler], Coroutine[Any, Any, None]] = None
 
 
 SIREN_ENTITY_DESCRIPTIONS = [
@@ -57,8 +59,8 @@ async def async_setup_entry(
     """Setup siren platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler siren entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler siren entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -76,7 +78,7 @@ async def async_setup_entry(
 
 
 class DopplerSiren(DopplerEntity[DopplerSirenEntityDescription], SirenEntity):
-    """Doppler Siren Entity."""
+    """CloudDoppler Siren Entity."""
 
     @property
     def supported_features(self) -> int | None:

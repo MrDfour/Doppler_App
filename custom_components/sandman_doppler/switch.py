@@ -1,4 +1,4 @@
-"""Switch platform for Doppler Sandman."""
+"""Switch platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import functools
 import logging
 from typing import Any
 
-from doppyler.const import (
+from .const import (
     ATTR_ALEXA_TAP_TO_TALK_TONE_ENABLED,
     ATTR_ALEXA_USE_ASCENDING_ALARMS,
     ATTR_ALEXA_WAKE_WORD_TONE_ENABLED,
@@ -23,8 +23,8 @@ from doppyler.const import (
     ATTR_USE_LEADING_ZERO,
     ATTR_WEATHER,
 )
-from doppyler.model.alarm import Alarm
-from doppyler.model.doppler import Doppler
+from .models import Alarm
+from .clock import CloudDoppler
 
 from homeassistant.components.switch import (
     SwitchDeviceClass,
@@ -51,11 +51,11 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerSwitchEntityDescription(SwitchEntityDescription):
-    """Class to describe Doppler switch entities."""
+    """Class to describe CloudDoppler switch entities."""
 
     state_key: str | None = None
     state_func: Callable[[Any], Any] = lambda x: x
-    set_value_func: Callable[[Doppler, bool], Coroutine[Any, Any, bool]] = None
+    set_value_func: Callable[[CloudDoppler, bool], Coroutine[Any, Any, bool]] = None
     set_value_func_name: str | None = None
 
 
@@ -149,8 +149,8 @@ async def async_setup_entry(
     """Setup switch platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler switch entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler switch entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -189,7 +189,7 @@ async def async_setup_entry(
 
 
 class DopplerSwitch(DopplerEntity[DopplerSwitchEntityDescription], SwitchEntity):
-    """Base class for Doppler switches."""
+    """Base class for CloudDoppler switches."""
 
     _attr_device_class: SwitchDeviceClass.SWITCH
     _attr_entity_category = EntityCategory.CONFIG
@@ -226,7 +226,7 @@ class DopplerSwitch(DopplerEntity[DopplerSwitchEntityDescription], SwitchEntity)
 
 
 class DopplerAlarmSwitch(CoordinatorEntity[DopplerDataUpdateCoordinator], SwitchEntity):
-    """Doppler Alarm switch class."""
+    """CloudDoppler Alarm switch class."""
 
     _attr_device_class: SwitchDeviceClass.SWITCH
     _attr_has_entity_name = True
@@ -236,7 +236,7 @@ class DopplerAlarmSwitch(CoordinatorEntity[DopplerDataUpdateCoordinator], Switch
         self,
         coordinator: DopplerDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        device: Doppler,
+        device: CloudDoppler,
         alarm: Alarm,
     ):
         super().__init__(coordinator)

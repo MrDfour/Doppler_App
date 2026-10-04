@@ -1,4 +1,4 @@
-"""Number platform for Doppler Sandman."""
+"""Number platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from doppyler.const import (
+from .const import (
     ATTR_DAY_TO_NIGHT_TRANSITION_VALUE,
     ATTR_NIGHT_TO_DAY_TRANSITION_VALUE,
     ATTR_TIME_OFFSET,
     ATTR_VOLUME_LEVEL,
 )
-from doppyler.model.doppler import Doppler
+from .clock import CloudDoppler
 
 from homeassistant.components.number import (
     NumberEntity,
@@ -37,11 +37,13 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerNumberEntityDescription(NumberEntityDescription):
-    """Class to describe Doppler number entities."""
+    """Class to describe CloudDoppler number entities."""
 
     state_key: str | None = None
     state_func: Callable[[Any], int] = lambda x: x
-    set_value_func: Callable[[Doppler, int], Coroutine[Any, Any, int]] | None = None
+    set_value_func: Callable[[CloudDoppler, int], Coroutine[Any, Any, int]] | None = (
+        None
+    )
     mode: NumberMode = NumberMode.AUTO
 
 
@@ -105,8 +107,8 @@ async def async_setup_entry(
     """Setup number platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler number entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler number entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -124,7 +126,7 @@ async def async_setup_entry(
 
 
 class DopplerNumber(DopplerEntity[DopplerNumberEntityDescription], NumberEntity):
-    """Doppler Number Entity."""
+    """CloudDoppler Number Entity."""
 
     @property
     def mode(self) -> NumberMode:

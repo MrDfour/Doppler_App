@@ -30,13 +30,6 @@ from .discovery import async_discover_clocks, build_transport, diff_clocks
 from .http import DopplerWebhookView
 from .services import DopplerServices
 
-# DopplerServices still reaches for doppyler's typed models (Alarm, RainbowConfiguration,
-# LightBarDisplayEffect, MainDisplayText) and for client.devices[dsn]. Reimplementing that
-# model layer is a separate piece of work. Until then the service handlers keep their
-# existing client, and it is deliberately never asked to list devices -- that call is
-# what drops LAN-less clocks, and discovery now happens through .discovery instead.
-from doppyler.client import DopplerClient
-
 SCAN_INTERVAL = timedelta(seconds=60)
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,6 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def async_add_clock(clock: CloudDoppler) -> None:
         """Register a newly discovered clock and start polling it."""
         _LOGGER.debug("Adding Doppler clock: %s (%s)", clock.name, clock.dsn)
+        clocks[clock.dsn] = clock
         if clock.dsn in per_entry:
             return
         dev_entry = dev_reg.async_get_or_create(
@@ -135,13 +129,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     def async_remove_clock(dsn: str) -> None:
         """Forget a clock that has disappeared from the account."""
         _LOGGER.debug("Removing Doppler clock: %s", dsn)
+        clocks.pop(dsn, None)
         if (dev_entry := dev_reg.async_get_device({(DOMAIN, dsn)})) is not None:
             dev_reg.async_remove_device(dev_entry.id)
         per_entry.pop(dsn, None)
 
+    clocks: dict[str, CloudDoppler] = {}
     store: dict[str, Any] = {
         "transport": transport,
-        "clocks": {},
+        "clocks": clocks,
         "add": async_add_clock,
         "remove": async_remove_clock,
     }
@@ -151,7 +147,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     try:
         for clock in await async_discover_clocks(transport):
             async_add_clock(clock)
-            store["clocks"][clock.dsn] = clock
     except DopplerError as err:
         raise ConfigEntryNotReady(
             f"Could not list Sandman Doppler clocks: {err}"
@@ -164,11 +159,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     )
 
-    # Service handlers are not yet migrated off doppyler; see the import comment above.
-    service_client = DopplerClient(
-        entry.data[CONF_EMAIL], entry.data[CONF_PASSWORD], client_session=session
-    )
-    DopplerServices(hass, ent_reg, dev_reg, service_client).async_register()
+    # Services resolve a target device id to a clock through this registry, which is kept
+    # in step by the add and remove callbacks above.
+    DopplerServices(hass, ent_reg, dev_reg, clocks).async_register()
 
     return True
 

@@ -1,4 +1,4 @@
-"""Sensor platform for Doppler Sandman."""
+"""Sensor platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 
-from doppyler.const import ATTR_CONNECTED_TO_ALEXA, ATTR_IS_IN_DAY_MODE
-from doppyler.model.doppler import Doppler
+from .const import ATTR_CONNECTED_TO_ALEXA, ATTR_IS_IN_DAY_MODE
+from .clock import CloudDoppler
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -29,7 +29,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerBinarySensorEntityDescription(BinarySensorEntityDescription):
-    """Class to describe Doppler binary sensor entities."""
+    """Class to describe CloudDoppler binary sensor entities."""
 
     state_key: str | None = None
     icon_lambda: Callable[[bool], str] | None = None
@@ -59,8 +59,8 @@ async def async_setup_entry(
     """Setup binary sensor platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler binary sensor entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler binary sensor entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -80,7 +80,7 @@ async def async_setup_entry(
 class DopplerBinarySensor(
     DopplerEntity[DopplerBinarySensorEntityDescription], BinarySensorEntity
 ):
-    """Doppler Day/Night Binary Sensor class."""
+    """CloudDoppler Day/Night Binary Sensor class."""
 
     @property
     def is_on(self) -> bool | None:

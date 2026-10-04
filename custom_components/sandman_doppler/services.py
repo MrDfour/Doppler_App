@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import asyncio
-from datetime import timedelta, time
+from datetime import timedelta
 import functools
 import logging
 from typing import Any
 
-from doppyler.client import DopplerClient
-from doppyler.const import (
+from .const import (
     ATTR_COLOR,
     ATTR_COLORS,
     ATTR_DEVICES,
@@ -31,13 +31,13 @@ from doppyler.const import (
     ATTR_TEXT,
     ATTR_VOLUME,
 )
-from doppyler.model.alarm import Alarm, AlarmSource, RepeatDayOfWeek
-from doppyler.model.color import Color
-from doppyler.model.doppler import Doppler
-from doppyler.model.light_bar import Direction, LightBarDisplayEffect, Mode, Sparkle
-from doppyler.model.main_display_text import MainDisplayText
-from doppyler.model.mini_display_number import MiniDisplayNumber
-from doppyler.model.rainbow import RainbowConfiguration, RainbowMode
+from .models import Alarm, AlarmSource, RepeatDayOfWeek
+from .models import Color
+from .clock import CloudDoppler
+from .models import Direction, LightBarDisplayEffect, Mode, Sparkle
+from .models import MainDisplayText
+from .models import MiniDisplayNumber
+from .models import RainbowConfiguration, RainbowMode
 import voluptuous as vol
 
 from homeassistant.const import ATTR_AREA_ID, ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_TIME
@@ -65,7 +65,6 @@ from .const import (
     SERVICE_SET_MINI_DISPLAY_NUMBER,
     SERVICE_SET_WEATHER_LOCATION,
     SERVICE_SET_RAINBOW_MODE,
-    SERVICE_UPDATE_ALARM,
 )
 
 SCAN_INTERVAL = timedelta(seconds=60)
@@ -106,10 +105,10 @@ VALID_STATUSES = {"Enabled": "set", "Disabled": "unarmed"}
 VALID_STATUSES_WITH_SNOOZE = {**VALID_STATUSES, "Snoozed": "snoozed"}
 
 
-async def call_doppyler_api_across_devices(
-    devices: set[Doppler], func_name: str, *args, **kwargs
+async def call_clock_api_across_devices(
+    devices: set[CloudDoppler], func_name: str, *args, **kwargs
 ) -> Any:
-    """Call Doppyler API across all devices."""
+    """Call a clock method across every targeted device."""
     results = await asyncio.gather(
         *(getattr(device, func_name)(*args, **kwargs) for device in devices),
         return_exceptions=True,
@@ -145,18 +144,18 @@ class DopplerServices:
         hass: HomeAssistant,
         ent_reg: er.EntityRegistry,
         dev_reg: dr.DeviceRegistry,
-        client: DopplerClient,
+        clocks: Mapping[str, CloudDoppler],
     ) -> None:
         """Initialize services."""
         self.hass = hass
         self.ent_reg = ent_reg
         self.dev_reg = dev_reg
-        self.client = client
+        self.clocks = clocks
 
     @callback
     def get_dopplers_from_targets(self, data: dict[str, Any]) -> dict[str, Any]:
         """Get dopplers from service targets."""
-        devices: set[Doppler] = set()
+        devices: set[CloudDoppler] = set()
         device_ids: set[str] = set()
         device_ids.update(data.pop(ATTR_DEVICE_ID, []))
         device_ids.update(
@@ -185,7 +184,7 @@ class DopplerServices:
                     "Sandman Doppler device"
                 )
                 continue
-            devices.add(self.client.devices[identifier[1]])
+            devices.add(self.clocks[identifier[1]])
 
         if not devices:
             raise vol.Invalid("No devices found in given targets!")
@@ -417,25 +416,25 @@ class DopplerServices:
     async def handle_set_weather_location(self, call: ServiceCall) -> None:
         """Handle set_weather_location service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         _LOGGER.debug("Called set_weather_location service, sending %s", data)
-        await call_doppyler_api_across_devices(
+        await call_clock_api_across_devices(
             devices, "set_weather_configuration", **data
         )
 
     async def handle_add_alarm(self, call: ServiceCall) -> None:
         """Handle add_alarm service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         _LOGGER.warning(f"data is {data}")
         alarm = Alarm(**data, src=AlarmSource.APP)
         _LOGGER.debug("Called add_alarm service, sending %s", alarm)
-        await call_doppyler_api_across_devices(devices, "add_alarm", alarm)
+        await call_clock_api_across_devices(devices, "add_alarm", alarm)
 
     async def handle_update_alarm(self, call: ServiceCall) -> None:
         """Handle update_alarm service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         alarm_id: int = data.pop(ATTR_ID)
 
         # Get all exisitng alarms for all devices
@@ -498,40 +497,40 @@ class DopplerServices:
     async def handle_delete_alarm(self, call: ServiceCall) -> None:
         """Handle delete_alarm service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         _LOGGER.debug("Called delete_alarm service for id %s", data[ATTR_ID])
-        await call_doppyler_api_across_devices(devices, "delete_alarm", data[ATTR_ID])
+        await call_clock_api_across_devices(devices, "delete_alarm", data[ATTR_ID])
 
     async def handle_set_main_display(self, call: ServiceCall) -> None:
         """Handle set_main_display service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         mdt = MainDisplayText(**data)
         _LOGGER.debug("Called set_main_display service, sending %s", mdt)
-        await call_doppyler_api_across_devices(devices, "set_main_display_text", mdt)
+        await call_clock_api_across_devices(devices, "set_main_display_text", mdt)
 
     async def handle_set_mini_display(self, call: ServiceCall) -> None:
         """Handle set_mini_display service."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         mdn = MiniDisplayNumber(**data)
         _LOGGER.debug("Called display_num_mini service, sending %s", mdn)
-        await call_doppyler_api_across_devices(devices, "set_mini_display_number", mdn)
+        await call_clock_api_across_devices(devices, "set_mini_display_number", mdn)
 
     async def handle_activate_light_bar(self, mode: Mode, call: ServiceCall) -> None:
         """Handle activate_light_bar_* services."""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         lbde = LightBarDisplayEffect(mode, **data)
         _LOGGER.debug(
             "Called activate_light_bar_%s service, sending %s", mode.value, lbde
         )
-        await call_doppyler_api_across_devices(devices, "set_light_bar_effect", lbde)
+        await call_clock_api_across_devices(devices, "set_light_bar_effect", lbde)
 
     async def handle_set_rainbow_mode(self, call: ServiceCall) -> None:
         """Handle set rainbow mode"""
         data = call.data.copy()
-        devices: set[Doppler] = data.pop(ATTR_DEVICES)
+        devices: set[CloudDoppler] = data.pop(ATTR_DEVICES)
         rbc = RainbowConfiguration(**data)
         _LOGGER.debug("Called set_rainbow_mode service, sending %s", rbc)
-        await call_doppyler_api_across_devices(devices, "set_rainbow_mode", rbc)
+        await call_clock_api_across_devices(devices, "set_rainbow_mode", rbc)

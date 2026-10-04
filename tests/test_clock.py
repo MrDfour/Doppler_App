@@ -53,6 +53,7 @@ def _load_clock():
 
 clock = _load_clock()
 cloud_mod = sys.modules["sd_under_test.cloud"]
+cloud_models = sys.modules["sd_under_test.models"]
 const = sys.modules["sd_under_test.const"]
 
 CloudDoppler = clock.CloudDoppler
@@ -314,17 +315,159 @@ def test_int_coercion(raw: Any, expected: Any) -> None:
 # ---------------------------------------------------------------------- alarms
 
 
+ALARM_WIRE = {
+    "id": 3,
+    "name": "Wake up",
+    "time_hr": 7,
+    "time_min": 30,
+    "repeat": "MoWe",
+    "color": {"red": 255, "green": 0, "blue": 0},
+    "volume": 100,
+    # 10 is the *active* value on this firmware. Modelling only 1 as enabled makes every
+    # real alarm render as switched off, which is a bug this project already shipped.
+    "status": 10,
+    "src": 0,
+    "sound": "Harp.mp3",
+}
+
+
 @pytest.mark.asyncio
 async def test_get_all_alarms_is_keyed_and_sorted_by_id() -> None:
-    """The clock returns alarms unsorted with new ones first, so sort by id."""
+    """The clock returns alarms unsorted with new alarms first, so sort by id."""
     gets = {
         "alarms": (
             200,
-            {"alarms": [{"id": 5}, {"id": 2}, {"id": 3}]},
+            {
+                "alarms": [
+                    {**ALARM_WIRE, "id": 5},
+                    {**ALARM_WIRE, "id": 2},
+                    {**ALARM_WIRE, "id": 3},
+                ]
+            },
         )
     }
     alarms = await make_clock(gets).get_all_alarms()
     assert list(alarms) == [2, 3, 5]
+
+
+@pytest.mark.asyncio
+async def test_alarm_status_ten_parses_as_unarmed() -> None:
+    """status 10 is the active value and must round trip, not be dropped."""
+    alarm = cloud_models.Alarm.from_dict(ALARM_WIRE)
+    assert alarm is not None
+    assert alarm.status == "unarmed"
+    assert alarm.to_dict()["status"] == 10
+    assert alarm.color == cloud_models.Color(255, 0, 0)
+    assert [d.value for d in alarm.repeat] == ["Mo", "We"]
+
+
+def test_an_alarm_missing_required_fields_is_rejected() -> None:
+    """A partial alarm yields None rather than a fabricated half-alarm."""
+    assert cloud_models.Alarm.from_dict({"id": 1}) is None
+    assert cloud_models.Alarm.from_dict("nonsense") is None
+
+
+@pytest.mark.parametrize(
+    ("wire", "expected"),
+    [
+        # The clock's own system alarm sends a literal "0" for no repeat.
+        ("0", []),
+        ("", []),
+        ("MoWe", ["MONDAY", "WEDNESDAY"]),
+        (
+            "MoTuWeThFrSaSu",
+            [
+                "MONDAY",
+                "TUESDAY",
+                "WEDNESDAY",
+                "THURSDAY",
+                "FRIDAY",
+                "SATURDAY",
+                "SUNDAY",
+            ],
+        ),
+        # An unrecognised code must not raise.
+        ("Xx", []),
+    ],
+)
+def test_repeat_parsing(wire: str, expected: list[str]) -> None:
+    """Repeat codes are two characters each, and "0" means none."""
+    assert [d.name for d in cloud_models.parse_repeat(wire)] == expected
+
+
+def test_the_system_alarm_from_the_live_payload_parses() -> None:
+    """The verbatim alarm observed on the clock must parse rather than raise."""
+    alarm = cloud_models.Alarm.from_dict(
+        {
+            "id": 0,
+            "name": "Doppler System Alarm",
+            "time_hr": 10,
+            "time_min": 0,
+            "repeat": "0",
+            "color": {"red": 255, "green": 0, "blue": 0},
+            "volume": 100,
+            "status": 10,
+            "src": 0,
+            "sound": "Harp.mp3",
+            "next_trigger": -1,
+        }
+    )
+    assert alarm is not None
+    assert alarm.repeat == []
+    assert alarm.status == "unarmed"
+
+
+@pytest.mark.asyncio
+async def test_add_alarm_does_not_send_an_id() -> None:
+    """The clock assigns ids and ignores yours, so sending one risks a duplicate."""
+    gets = {"alarms": (200, {"alarms": [{**ALARM_WIRE, "id": 9}]})}
+    session = FakeSession(
+        gets, {"alarms": (200, {"alarms": [{**ALARM_WIRE, "id": 9}]})}
+    )
+    transport = cloud_mod.CloudTransport(
+        email="u@e.com", password="p", dsn=DSN, session=session  # type: ignore[arg-type]
+    )
+    alarm = cloud_models.Alarm.from_dict(ALARM_WIRE)
+    assert await CloudDoppler(transport, DSN).add_alarm(alarm) == 9
+    path, body = session.put_calls[0]
+    assert path == "alarms"
+    assert "id" not in body, "an id must not be sent on create"
+
+
+@pytest.mark.asyncio
+async def test_update_alarm_uses_put_on_the_specific_id() -> None:
+    """PUT /alarms/{id} updates in place; POST would create a duplicate instead."""
+    session = FakeSession({}, {"alarms/3": (200, {"alarms": []})})
+    transport = cloud_mod.CloudTransport(
+        email="u@e.com", password="p", dsn=DSN, session=session  # type: ignore[arg-type]
+    )
+    alarm = cloud_models.Alarm.from_dict(ALARM_WIRE)
+    assert await CloudDoppler(transport, DSN).update_alarm(3, alarm) is True
+    path, body = session.put_calls[0]
+    assert path == "alarms/3"
+    assert body["id"] == 3
+
+
+@pytest.mark.asyncio
+async def test_invented_endpoints_fail_loudly_rather_than_pretending() -> None:
+    """display-text, small-display-digits and display-dots are not Doppler endpoints.
+
+    Each answers 200 and changes nothing, so sending them would convince an automation
+    author the feature works. Refusing is the honest outcome.
+    """
+    session = FakeSession({})
+    transport = cloud_mod.CloudTransport(
+        email="u@e.com", password="p", dsn=DSN, session=session  # type: ignore[arg-type]
+    )
+    clock = CloudDoppler(transport, DSN)
+    for call in (
+        clock.set_main_display_text(None),
+        clock.set_mini_display_number(None),
+        clock.set_light_bar_effect(None),
+    ):
+        with pytest.raises(cloud_mod.UnsupportedEndpointError):
+            await call
+    assert session.put_calls == [], "a rejected feature must not hit the network"
 
 
 @pytest.mark.asyncio

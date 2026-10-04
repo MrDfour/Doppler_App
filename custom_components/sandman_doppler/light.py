@@ -1,4 +1,4 @@
-"""Light platform for Doppler Sandman."""
+"""Light platform for CloudDoppler Sandman."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import functools
 import logging
 from typing import Any, Literal
 
-from doppyler.const import (
+from .const import (
     ATTR_DAY_BUTTON_BRIGHTNESS,
     ATTR_DAY_BUTTON_COLOR,
     ATTR_DAY_DISPLAY_BRIGHTNESS,
@@ -19,9 +19,9 @@ from doppyler.const import (
     ATTR_NIGHT_DISPLAY_COLOR,
     ATTR_SMART_BUTTON_COLOR,
 )
-from doppyler.model.color import Color
-from doppyler.model.doppler import Doppler
-from doppyler.model.smart_button import SmartButtonConfiguration
+from .models import Color
+from .clock import CloudDoppler
+from .models import SmartButtonConfiguration
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
@@ -51,14 +51,16 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass
 class DopplerLightEntityDescription(LightEntityDescription):
-    """Class to describe Doppler light entities."""
+    """Class to describe CloudDoppler light entities."""
 
     color_key: str | None = None
-    set_color_func: Callable[[Doppler, Color], Coroutine[Any, Any, Any]] | None = None
-    brightness_key: str | None = None
-    set_brightness_func: Callable[[Doppler, int], Coroutine[Any, Any, int]] | None = (
+    set_color_func: Callable[[CloudDoppler, Color], Coroutine[Any, Any, Any]] | None = (
         None
     )
+    brightness_key: str | None = None
+    set_brightness_func: (
+        Callable[[CloudDoppler, int], Coroutine[Any, Any, int]] | None
+    ) = None
 
 
 LIGHT_ENTITY_DESCRIPTIONS = [
@@ -111,7 +113,7 @@ LIGHT_ENTITY_DESCRIPTIONS = [
 
 def set_smart_button_color_func(
     i: int,
-) -> Callable[[Doppler, Color], Coroutine[Any, Any, SmartButtonConfiguration]]:
+) -> Callable[[CloudDoppler, Color], Coroutine[Any, Any, SmartButtonConfiguration]]:
     """Return a coroutine to set the smart button color."""
     return lambda dev, color: dev.set_smart_button_configuration(i, color=color)
 
@@ -166,8 +168,8 @@ async def async_setup_entry(
     """Setup light platform."""
 
     @callback
-    def async_add_device(device: Doppler) -> None:
-        """Add Doppler light entities."""
+    def async_add_device(device: CloudDoppler) -> None:
+        """Add CloudDoppler light entities."""
         coordinator: DopplerDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id][
             device.dsn
         ]
@@ -191,7 +193,7 @@ async def async_setup_entry(
 
 
 class BaseDopplerLight(DopplerEntity[DopplerLightEntityDescription], LightEntity):
-    """Base Doppler Light class."""
+    """Base CloudDoppler Light class."""
 
     _attr_color_mode = ColorMode.RGB
     _attr_supported_color_modes = {ColorMode.RGB}
@@ -226,21 +228,21 @@ class BaseDopplerLight(DopplerEntity[DopplerLightEntityDescription], LightEntity
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the device off."""
         _LOGGER.warning(
-            "Turning off the Doppler %s light is not supported.", self.ed.key
+            "Turning off the CloudDoppler %s light is not supported.", self.ed.key
         )
 
 
 class DopplerLight(BaseDopplerLight):
-    """Doppler Light class."""
+    """CloudDoppler Light class."""
 
     def __init__(
         self,
         coordinator: DopplerDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        device: Doppler,
+        device: CloudDoppler,
         description: DopplerLightEntityDescription,
     ):
-        """Initialize the Doppler Light."""
+        """Initialize the CloudDoppler Light."""
         super().__init__(coordinator, config_entry, device, description)
         self._ent_reg: er.EntityRegistry | None = None
         self._sync_signal_prefix = (
@@ -356,7 +358,7 @@ class DopplerLight(BaseDopplerLight):
 
 
 class DopplerSmartButtonLight(BaseDopplerLight):
-    """Doppler Smart Button Light class."""
+    """CloudDoppler Smart Button Light class."""
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the device on."""
