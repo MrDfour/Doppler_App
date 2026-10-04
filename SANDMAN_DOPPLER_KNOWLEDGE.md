@@ -366,6 +366,130 @@ were in play there:
 app's endpoint list entirely**. Treat all three "override" endpoints as invented, not as
 unimplemented firmware. See open issue 11.
 
+## What Each Gated Feature Actually Does
+
+The enum names are app-internal and do not obviously correspond to clock behaviour. Mapped to the
+endpoint and the user-visible effect:
+
+| `Features` constant | What the user gets | Endpoint | 1214 |
+| :--- | :--- | :--- | :--- |
+| `TIME_OFFSET` | Shift displayed time by ±minutes | `doptime/offset` | **works** |
+| `REAL_TIME_WEATHER` | Weather updating continuously, not only at the announcement hour | `software/weather` | **works** |
+| `HIDE_LEADING_ZERO` | `01:05` → `1:05` in 24-hour mode | `software/use-leading-zero` | **works, 4/6** |
+| `SMART_BUTTONS` | Physical buttons fire a webhook | `hardware/button1`, `button2` | **works** |
+| `SNOOZE_LENGTH` | Snooze duration in minutes (5/10/20) | `software/snooze-length` | absent |
+| `HIDE_COLON` / `COLON_BLINK` | Stop / control the blinking colon | `software/use-colon`, `colon-blink` | absent |
+| `DISPLAY_SECONDS` | Seconds on the mini display | `software/display-seconds` | absent |
+| `DISPLAY_SNOOZE` | Remaining snooze time on the mini display | `software/use-snooze-display` | absent |
+| `FADE_MODE` | Display fades over a minute instead of switching abruptly | `software/use-fade-time` | absent |
+| `WIFI_INFO` | SSID / IP / uptime / signal in the info screen | `hardware/wifi-status` | absent |
+| `LOCAL_CONTROL` | App talks to the clock directly over LAN | — | LAN dead, cause unknown |
+| `US_WEATHER` | NWS real-time observations, US only (`wsmode` 13–17) | `software/weather` | untested |
+| `BUTTON_ENDPOINTS` | Which webhook a button triggers | `hardware/button1`, `button2` | untested |
+| `RAINBOW_MODE` | 29-LED lightbar animation | `software/use-rainbow-display` | absent |
+
+**Most of what is missing is display cosmetics** — colon, leading zero, seconds, snooze countdown,
+fade. The two a user would genuinely miss are **`SNOOZE_LENGTH`** and **`RAINBOW_MODE`**.
+
+## Smart Buttons — the one genuinely useful feature that works
+
+Read live, `hardware/button1` and `hardware/button2` answer **200 in ~700–800 ms, 9/9 cycles,
+byte-identical** — the most reliable endpoints on the device. Schema:
+
+```json
+{"url":"", "headers":[], "data":"", "command":"POST", "color":[1,1,1],
+ "double_tap":null, "triple_tap":null, "hold":null}
+```
+
+Both are unconfigured (`url` empty). Each button stores a **webhook definition**: an arbitrary
+`url`, custom `headers`, a `data` body, an HTTP `command`, an LED `color`, and **three separate
+action slots** — `double_tap`, `triple_tap` and `hold` — so one physical button can carry three
+distinct actions.
+
+**The architectural point that matters more than the feature:** the clock POSTs *directly* to the
+configured URL. That request **does not pass through `control.sandmandoppler.com` at all.** It
+sidesteps the entire latency problem in this document — the 30 s stalls, the 15 s 408s, the request
+gate, the poll sweep, the token-refresh storm. A button press reaches Home Assistant in one hop
+clock→your server, with none of the WAN relay in the path.
+
+**This app implements none of it.** No `button1`/`button2` model, no write path, no UI. Given the
+clock can never be updated, this looked like the highest-value feature available to add — it is
+the only responsive input path the hardware still has. **It is not: the button config is read-only
+on this firmware (see below), so there is nothing to implement.**
+
+### Reading a press — what was tried (Oct 2026)
+
+**Stage 1, read-only, negative.** Polled `hardware/button-last-message`, `button1`, `button2`
+back-to-back for 150 s (9 cycles) while the owner pressed the buttons:
+
+- `button1` / `button2`: 200 every cycle, config unchanged. Reliable.
+- `button-last-message`: **0/9 answered** — every request 408'd at the full ~15 s timeout. (Earlier
+  in the same session the same path answered **3 of 6**.) When it does answer it returns
+  `{"message":""}` — empty.
+
+So `button-last-message` does **not** report button presses. The empty value is consistent with it
+reporting the last **webhook response**, of which there is none because no `url` is configured.
+
+> **Instrumentation flaw worth recording:** the watcher logged only HTTP 200s and exceptions, so the
+> 408s were silently dropped from the log file. The conclusion is still sound — the ~17 s gap
+> between cycles against ~1.5 s of button1+2 time is exactly the missing 15 s timeout — but the log
+> itself does not show it. A future probe must log every status code.
+
+**Stage 2 — performed, and the feature is NOT usable on this firmware.**
+
+Test design: rather than a third-party collector, point `hardware/button1` at
+`https://httpbin.org/base64/<marker>` (a tiny deterministic echo) and read the result back **through
+the clock's own `hardware/button-last-message`**. No third-party read API needed.
+
+| Step | Result |
+| :--- | :--- |
+| `GET hardware/button1` baseline | `{"url":"","headers":[],"data":"","command":"POST","color":[1,1,1],"double_tap":null,"triple_tap":null,"hold":null}` |
+| `PUT` full body (url=echo, `color`→green) | **200**, body **echoed our request back** |
+| `GET` immediately after | **original config — unchanged** |
+| `GET` again 150 s later | **original config — unchanged** |
+| `PUT {"color":[255,0,0]}` only | **500** `[oatpp::data::mapping::type::String…]: Null pointer` |
+| `button-last-message` over 150 s | never anything but `{"message":""}` |
+| Control: `PUT hardware/volume` 29 | 200, and **readback confirmed 29** |
+| Restore | volume put back to 76; `button1` never altered |
+
+**Conclusions, all measured:**
+
+1. **`hardware/button1` is readable but NOT writable on 1214.** The write returns 200 and the
+   stored config does not change, ever.
+2. **The handler is real, not a stub.** A partial body produced a genuine oatpp null-pointer on
+   `url`, which means the clock parsed and validated the payload. It then discarded it. This is a
+   firmware build where the feature is compiled out behind a route that still exists — consistent
+   with `SMART_BUTTONS` being gated at 1380.
+3. **`button-last-message` does not report button presses.** It reports the last *webhook response*,
+   and there has never been one. So press detection is **only** observable at the receiving URL —
+   which we cannot configure on this firmware. **Smart buttons are unusable on this clock.**
+4. **Writes in general do persist** (`hardware/volume` proved it), so this is specific to the button
+   routes, not a broken write path.
+
+### The most important lesson in this section: a 200 can echo your own request
+
+`PUT hardware/button1` returned **200 with our submitted body**, escaped-slash for slash-slash —
+i.e. a faithful re-serialisation of what we sent. A reader could easily take that as confirmation
+the config was stored. It was not. **The `PUT` response body on these routes is an echo of the
+request, not a statement of stored state.**
+
+This is a sharper failure than `ACCEPTED_UNVERIFIED`: there the verdict was honest about what it
+could not confirm, whereas here the API actively *looks* like confirmation. **Never treat a `PUT`
+response body as proof of persistence — always `GET` the value back.** Open issue 5 (`confirmHardware`
+covers one endpoint) is the same gap in our own code.
+
+### Incidental, not proven: the physical buttons DO work
+
+`hardware/volume` read **29** early in the session and **76** after the owner had been pressing
+buttons. The official app contains `updateVolumeFromButtons`, `VolumeTimeRefresher` and
+`VolumeListenerDelegate`, which exist precisely because the clock reports button-driven volume
+changes. So the buttons are physically functional and their effect is readable via
+`hardware/volume` — just **not** as webhook triggers.
+
+This is a hypothesis from two data points, not a measurement. It would be confirmed by pressing a
+button once and watching `hardware/volume` move. It is also the answer to "can we read a press":
+**yes, but only as a side effect of the volume control, and only while they are unconfigured.**
+
 ## The Firmware Update Path — Mender, not a REST download
 
 The official app does **not** download a firmware file. It asks the Mender OTA server to stage a
@@ -914,6 +1038,81 @@ this fix was verified with 6/6 `AlarmWriteProtocolTest` tests and full suite gre
    *If the firmware is ever recovered* for what a safe manual flash would still require — a recovery
    path, the partition layout, and signature verification are all missing, and all three are blocking.
 
+
+## The Home Assistant Integration Is Non-Functional on This Unit (measured)
+
+Investigated Oct 2026. **This is not a latent risk — the integration cannot work on this clock at
+all**, for two independent reasons, both now measured rather than inferred.
+
+`custom_components/sandman_doppler` pins `doppyler==0.0.20` and reaches the clock exclusively
+through it. Two properties of that library are fatal here.
+
+### Blocker 1 — the device is never discovered
+
+`doppyler/client.py:266`:
+
+```python
+try:
+    device_info, local_info = await asyncio.gather(
+        self.call_cloud_api(dsn, "device"),
+        self.call_cloud_api(dsn, "localkey"),
+    )
+except DopplerException:
+    return          # <-- silently drops the device
+```
+
+Measured on this DSN: `device` → HTTP 200 in 1037 ms, **`localkey` → client timeout at 10171 ms.**
+Because `localkey` 408s on this unit, `DopplerException` fires and the device is **never added**.
+No device, no coordinator, no entities — including the Alexa sensor.
+
+**The failure is a client-side timeout, not the 408.** `doppyler`'s `DEFAULT_TIMEOUT = 10`
+(const.py) fires before the relay's 15 s 408 ever arrives, so it never even sees the status code.
+The Android app already handles this exact case by falling back to cloud; `doppyler` does not.
+
+### Blocker 2 — every coordinator cycle aborts
+
+`doppyler/model/doppler.py:896` is `await asyncio.gather(*coros)` with **no
+`return_exceptions=True`**, so the first endpoint to raise kills all of them.
+`DEFAULT_CLOUD_API_SEMAPHORE_LIMIT = 1` also forces strict serialization.
+
+Measured sweep of the 43 endpoints `get_all_data()` touches, replicating doppyler semantics
+(10 s timeout, serialized, 408→raise):
+
+```
+endpoints swept     : 43
+answered 200/201    : 33
+would raise         : 10
+SEQUENTIAL TOTAL    : 130.9s
+HA SCAN_INTERVAL    : 60.0s
+```
+
+The 10 that raise — every one a ~10.2 s client timeout:
+
+`hardware/wifi-status` · `software/use-colon` · `software/colon-blink` ·
+`software/use-leading-zero` · `software/use-fade-time` · `software/display-seconds` ·
+`software/use-rainbow-display` · `hardware/button-last-message` ·
+`software/snooze-length` · `software/use-snooze-display`
+
+So the cycle cannot finish inside its own interval, and even if it did, **one raise out of 43
+means `UpdateFailed` and no entity updates at all.**
+
+### The Alexa sensor specifically is collateral damage, not the problem
+
+`connected_to_alexa` **works when called directly** — `alexa/lwa-status` → 200 in 1176 ms, and
+`get_is_connected_to_alexa()` is already implemented in `doppyler` and already included in
+`get_all_data()` (doppler.py:874). The binary sensor in `binary_sensor.py` reads it correctly.
+
+**There is no missing Alexa code.** The sensor is unreachable only because the coordinator never
+completes. Anyone who goes looking for an Alexa bug here will waste their time.
+
+### Two smaller findings from the same sweep
+
+- `doppyler` authenticates with `applicationId: "doppyler"` (its `DEFAULT_APPLICATION_ID`), and
+  that answers **HTTP 201**, not 200. Scripts that assume 200 will misread a successful login.
+- HA's `__init__.py:240` calls `set_smart_button_configuration(1, url=…, command="HA")` on first
+  coordinator load. On this firmware that write is a **guaranteed silent no-op** — see the smart
+  button section. So even a fully working coordinator would retry a write that can never land,
+  forever, without surfacing an error.
 
 ## The UI Write Path — Do Not "Simplify" This Away
 
