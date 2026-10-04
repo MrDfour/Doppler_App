@@ -324,6 +324,50 @@ class CloudTransport:
                 raise DopplerConnectionError(f"{path} returned HTTP {status}: {body!r}")
         raise DopplerConnectionError(f"{path} could not be read")
 
+    async def async_write(
+        self, method: str, path: str, data: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Send a PUT or POST to a device endpoint and return the decoded body.
+
+        Args:
+            method: ``PUT`` or ``POST``.
+            path: Path relative to the device, e.g. ``hardware/volume``.
+            data: JSON body.
+
+        Returns:
+            The decoded JSON body.
+
+        Raises:
+            EndpointUnavailableError: The endpoint is known not to exist here.
+            DopplerAuthError: Credentials are no longer valid.
+            DopplerConnectionError: The request failed.
+        """
+        if not is_endpoint_available(path):
+            raise EndpointUnavailableError(
+                f"{path} does not answer on this firmware and cannot be written"
+            )
+        target = self.dsn
+        async with self._semaphore:
+            for attempt in (1, 2):
+                await self._ensure_token()
+                status, body = await self._raw_request(
+                    method, f"{BASE_SANDMAN_API_URL}/{target}/{path}", data=data
+                )
+                if status in (200, 201):
+                    return body
+                if status in (401, 403) and attempt == 1:
+                    self._expires_at = 0.0
+                    await self._async_refresh()
+                    continue
+                if status == 404:
+                    raise EndpointUnavailableError(
+                        f"{path} is not routed on this model"
+                    )
+                raise DopplerConnectionError(
+                    f"{method} {path} returned HTTP {status}: {body!r}"
+                )
+        raise DopplerConnectionError(f"{method} {path} could not be completed")
+
     # ----------------------------------------------------------- discovery
 
     async def async_get_devices(self) -> list[DeviceDescriptor]:
