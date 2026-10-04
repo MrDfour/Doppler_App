@@ -1,7 +1,9 @@
 package com.sandman.doppler
 
 import com.sandman.doppler.model.DopplerColor
+import com.sandman.doppler.model.resolveCustomColor
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -95,5 +97,64 @@ class ColorHexParsingTest {
         ).forEach { preset ->
             assertEquals(preset, DopplerColor.fromHexOrNull(preset.toHex()))
         }
+    }
+
+    // ---------------------------------------------------------------------------------
+    // Choosing between the two inputs.
+    //
+    // Parsing was already covered above; what was missing was the wiring. The dialog has
+    // three sliders *and* a hex field pre-filled with the current colour, so the field
+    // always parses. Preferring the parsed hex whenever it is valid means it always wins,
+    // and dragging a slider applies the colour the clock already had - while the preview
+    // swatch still moves, so the control looks like it works. That is why the picker read
+    // as broken.
+    // ---------------------------------------------------------------------------------
+
+    @Test
+    fun `moving a slider applies the slider colour even though the hex field still parses`() {
+        // The exact bug. The field was never touched, so its contents describe the colour
+        // the dialog opened with and must not win.
+        val slidersMoved = DopplerColor(123, 45, 200)
+        val untouchedField = DopplerColor.CYAN.toHex()
+        assertNotNull(DopplerColor.fromHexOrNull(untouchedField))
+        assertEquals(slidersMoved, resolveCustomColor(slidersMoved, untouchedField, hexEdited = false))
+    }
+
+    @Test
+    fun `typing a hex value wins over the sliders`() {
+        // The deliberate case: six typed digits beat a nudged channel.
+        assertEquals(
+            DopplerColor(0x7B, 0x2D, 0xC8),
+            resolveCustomColor(DopplerColor.CYAN, "#7B2DC8", hexEdited = true)
+        )
+    }
+
+    @Test
+    fun `an untouched field is never treated as user input`() {
+        // Even if the pre-filled text somehow failed to parse, an untouched field carries no
+        // intent, so the sliders must still win rather than the value being silently dropped.
+        assertEquals(
+            DopplerColor(1, 2, 3),
+            resolveCustomColor(DopplerColor(1, 2, 3), "not-a-colour", hexEdited = false)
+        )
+    }
+
+    @Test
+    fun `a half typed hex falls back to the sliders instead of refusing`() {
+        // Mid-edit the field is invalid. Applying the sliders keeps the control usable and
+        // still changes something visible, rather than discarding the user's intent.
+        assertEquals(
+            DopplerColor(9, 9, 9),
+            resolveCustomColor(DopplerColor(9, 9, 9), "#7B2D", hexEdited = true)
+        )
+    }
+
+    @Test
+    fun `an untouched dialog with untouched sliders is a no-op`() {
+        // Opening and applying without touching anything must not change the colour.
+        assertEquals(
+            DopplerColor.CYAN,
+            resolveCustomColor(DopplerColor.CYAN, DopplerColor.CYAN.toHex(), hexEdited = false)
+        )
     }
 }

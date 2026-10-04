@@ -73,6 +73,35 @@ data class DopplerColor(
     }
 }
 
+/**
+ * Decide which colour the custom picker should apply.
+ *
+ * The dialog offers two inputs - three channel sliders and a hex field - and they have to
+ * be reconciled, because the field is pre-filled with the current colour and therefore
+ * always parses successfully. Preferring the parsed hex whenever it is valid means the
+ * field always wins, so **moving a slider silently applies the original colour instead**:
+ * the preview swatch and the hex label both update, so the control looks alive, and the
+ * clock keeps the colour it already had. That is the bug this function exists to prevent.
+ *
+ * The rule is therefore "the hex field wins only when the user actually touched it":
+ *
+ * - [hexEdited] false and the hex happens to be valid - the user moved sliders, so sliders win.
+ * - [hexEdited] true and the hex is valid - the user typed a deliberate value, so it wins.
+ * - [hexEdited] true and the hex is invalid - fall back to the sliders rather than refusing,
+ *   so a half-typed value still applies something visible.
+ *
+ * @param sliderColor the colour the three sliders currently describe.
+ * @param hexText the raw contents of the hex field.
+ * @param hexEdited whether the user edited the hex field in this session of the dialog.
+ * @return the colour to send to the clock.
+ */
+fun resolveCustomColor(
+    sliderColor: DopplerColor,
+    hexText: String,
+    hexEdited: Boolean
+): DopplerColor =
+    if (hexEdited) DopplerColor.fromHexOrNull(hexText) ?: sliderColor else sliderColor
+
 @Serializable
 data class DopplerColorObject(
     val red: Int = 0,

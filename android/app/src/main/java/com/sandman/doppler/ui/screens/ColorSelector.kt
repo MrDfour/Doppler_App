@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sandman.doppler.model.DopplerColor
+import com.sandman.doppler.model.resolveCustomColor
 import com.sandman.doppler.ui.theme.Amber400
 import com.sandman.doppler.ui.theme.Cyan400
 import com.sandman.doppler.ui.theme.Slate400
@@ -153,9 +154,16 @@ fun CustomColorDialog(
     var blue by remember { mutableStateOf(initial.b.toFloat()) }
     var hex by remember { mutableStateOf(initial.toHex()) }
 
+    // The field is pre-filled with the current colour, so it always parses. Without tracking
+    // whether the user touched it, the parsed hex always wins and the sliders do nothing -
+    // while the preview swatch still moves, so the control looks like it works.
+    var hexEdited by remember { mutableStateOf(false) }
+
     val fromSliders = DopplerColor(red.toInt(), green.toInt(), blue.toInt())
     val parsedHex = DopplerColor.fromHexOrNull(hex)
-    val hexValid = parsedHex != null
+    // An untouched field holds the colour the dialog opened with, so it is never an error.
+    // Once the user types, invalid input is an error worth showing.
+    val hexValid = if (hexEdited) parsedHex != null else true
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -179,13 +187,13 @@ fun CustomColorDialog(
                     )
                 }
 
-                ChannelSlider("R", red, Color.Red) { red = it }
-                ChannelSlider("G", green, Color.Green) { green = it }
-                ChannelSlider("B", blue, Color.Blue) { blue = it }
+                ChannelSlider("R", red, Color.Red) { red = it; hexEdited = false }
+                ChannelSlider("G", green, Color.Green) { green = it; hexEdited = false }
+                ChannelSlider("B", blue, Color.Blue) { blue = it; hexEdited = false }
 
                 OutlinedTextField(
                     value = hex,
-                    onValueChange = { hex = it },
+                    onValueChange = { hex = it; hexEdited = true },
                     singleLine = true,
                     isError = !hexValid,
                     label = { Text("Hex", color = Slate400, fontSize = 12.sp) },
@@ -213,9 +221,10 @@ fun CustomColorDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    // A valid hex entry wins over the sliders, since typing six digits is a
-                    // more deliberate act than nudging one channel.
-                    onConfirm(parsedHex ?: fromSliders)
+                    // Sliders win unless the user actually typed a hex value: the field is
+                    // pre-filled, so "hex is valid" alone would always be true and the
+                    // sliders would be silently discarded.
+                    onConfirm(resolveCustomColor(fromSliders, hex, hexEdited))
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = Cyan400, contentColor = Color.Black)
             ) {
