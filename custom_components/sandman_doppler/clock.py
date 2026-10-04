@@ -21,6 +21,7 @@ Two behaviours differ from doppyler on purpose:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 import logging
 from typing import Any, Callable
 
@@ -136,6 +137,84 @@ def _as_bool(value: Any) -> bool | None:
 
 
 @dataclass(frozen=True)
+class Color:
+    """An RGB colour as the platforms consume it.
+
+    The colour endpoints answer ``{"color": [r, g, b]}``, but ``light.py`` reads
+    ``.red``/``.green``/``.blue`` off the coordinator value. Returning the raw list
+    therefore breaks the light platform with ``'list' object has no attribute 'red'``.
+    """
+
+    red: int
+    green: int
+    blue: int
+
+    @classmethod
+    def from_wire(cls, value: Any) -> "Color | None":
+        """Build from a wire value, returning ``None`` for anything unusable.
+
+        Args:
+            value: Expected to be ``[r, g, b]``. Short, long or malformed lists and
+                non-lists all yield ``None`` rather than raising.
+        """
+        if isinstance(value, (list, tuple)):
+            parts = [_as_int(v) for v in value]
+            if len(parts) == 3 and all(p is not None for p in parts):
+                return cls(parts[0], parts[1], parts[2])  # type: ignore[arg-type]
+        return None
+
+    def as_list(self) -> list[int]:
+        """Return the colour as ``[r, g, b]``."""
+        return [self.red, self.green, self.blue]
+
+
+def _as_timedelta_minutes(value: Any) -> Any:
+    """Convert a wire offset in minutes to a ``timedelta``.
+
+    ``number.py`` renders the offset with ``x.total_seconds() // 60``, so it needs a
+    ``timedelta`` rather than the bare integer the wire carries.
+    """
+    minutes = _as_int(value)
+    return None if minutes is None else timedelta(minutes=minutes)
+
+
+@dataclass(frozen=True)
+class WeatherConfiguration:
+    """Weather settings as the platforms consume them.
+
+    ``select.py`` reads ``.mode`` and passes it through ``normalize_enum_name``, so
+    ``mode`` should be a ``doppyler.model.weather.WeatherMode`` member for the option
+    list to line up. That import is deferred and optional: this module is imported by
+    tests that run on Windows, where doppyler is not installed, and there the raw integer
+    is kept instead.
+    """
+
+    enabled: bool | None
+    location: str | None
+    mode: Any
+
+
+def _as_weather_config(value: Any) -> "WeatherConfiguration | None":
+    """Build a :class:`WeatherConfiguration` from a ``software/weather`` body."""
+    if not isinstance(value, dict):
+        return None
+    mode = _as_int(value.get("wsmode"))
+    resolved: Any = mode
+    if mode is not None:
+        try:  # pragma: no cover - depends on the environment
+            from doppyler.model.weather import WeatherMode
+
+            resolved = WeatherMode(mode)
+        except Exception:  # pragma: no cover - doppyler absent, or unknown mode
+            resolved = mode
+    return WeatherConfiguration(
+        enabled=_as_bool(value.get("wsonoff")),
+        location=value.get("location"),
+        mode=resolved,
+    )
+
+
+@dataclass(frozen=True)
 class ReadSpec:
     """How to turn one endpoint's response into one coordinator attribute.
 
@@ -158,7 +237,7 @@ READ_SPECS: tuple[ReadSpec, ...] = (
     ReadSpec(ATTR_WIFI, "hardware/wifi-status"),
     ReadSpec(ATTR_TIME_MODE, "software/time-mode", "timeMode", _as_int),
     ReadSpec(ATTR_TIMEZONE, "doptime/timezone", "timezone"),
-    ReadSpec(ATTR_TIME_OFFSET, "doptime/offset", "offset", _as_int),
+    ReadSpec(ATTR_TIME_OFFSET, "doptime/offset", "offset", _as_timedelta_minutes),
     ReadSpec(ATTR_USE_COLON, "software/use-colon", "on", _as_bool),
     ReadSpec(ATTR_COLON_BLINK, "software/colon-blink", "blink", _as_bool),
     ReadSpec(ATTR_USE_LEADING_ZERO, "software/use-leading-zero", "on", _as_bool),
@@ -226,11 +305,19 @@ READ_SPECS: tuple[ReadSpec, ...] = (
     ReadSpec(
         ATTR_SYNC_DAY_AND_NIGHT_COLOR, "hardware/sync-high-low-color", "sync", _as_bool
     ),
-    ReadSpec(ATTR_DAY_DISPLAY_COLOR, "hardware/high-display-color", "color"),
-    ReadSpec(ATTR_DAY_BUTTON_COLOR, "hardware/high-button-color", "color"),
-    ReadSpec(ATTR_NIGHT_DISPLAY_COLOR, "hardware/low-display-color", "color"),
-    ReadSpec(ATTR_NIGHT_BUTTON_COLOR, "hardware/low-button-color", "color"),
-    ReadSpec(ATTR_WEATHER, "software/weather"),
+    ReadSpec(
+        ATTR_DAY_DISPLAY_COLOR, "hardware/high-display-color", "color", Color.from_wire
+    ),
+    ReadSpec(
+        ATTR_DAY_BUTTON_COLOR, "hardware/high-button-color", "color", Color.from_wire
+    ),
+    ReadSpec(
+        ATTR_NIGHT_DISPLAY_COLOR, "hardware/low-display-color", "color", Color.from_wire
+    ),
+    ReadSpec(
+        ATTR_NIGHT_BUTTON_COLOR, "hardware/low-button-color", "color", Color.from_wire
+    ),
+    ReadSpec(ATTR_WEATHER, "software/weather", None, _as_weather_config),
     ReadSpec(
         ATTR_WEATHER_WAKE_UP_TIME, "software/weather-wakeup-time", "weatherwakeuptime"
     ),
@@ -315,6 +402,7 @@ class CloudDoppler:
                     f"{ATTR_SMART_BUTTON_COLOR}_{index}",
                     f"hardware/button{index}",
                     "color",
+                    Color.from_wire,
                 )
             )
         return data

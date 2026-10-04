@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+from datetime import timedelta
 from pathlib import Path
 import sys
 from typing import Any
@@ -226,18 +227,20 @@ async def test_get_all_data_maps_values_and_types() -> None:
     data = await make_clock(gets).get_all_data()
     assert data[const.ATTR_TIME_MODE] == 12
     assert data[const.ATTR_TIMEZONE] == "America/Chihuahua"
-    assert data[const.ATTR_TIME_OFFSET] == -360
+    # number.py renders the offset with x.total_seconds() // 60, so it must be a
+    # timedelta rather than the bare integer the wire carries.
+    assert data[const.ATTR_TIME_OFFSET] == timedelta(minutes=-360)
     assert data[const.ATTR_VOLUME_LEVEL] == 76
     assert data[const.ATTR_LIGHT_SENSOR_VALUE] == 1414
     assert data[const.ATTR_IS_IN_DAY_MODE] is True
     assert data[const.ATTR_DAY_DISPLAY_BRIGHTNESS] == 60
-    assert data[const.ATTR_DAY_DISPLAY_COLOR] == [180, 60, 255]
+    assert data[const.ATTR_DAY_DISPLAY_COLOR] == clock.Color(180, 60, 255)
     assert data[const.ATTR_SYNC_DAY_AND_NIGHT_COLOR] is True
     assert data[const.ATTR_CONNECTED_TO_ALEXA] is False
     assert data[const.ATTR_ALEXA_TAP_TO_TALK_TONE_ENABLED] is True
     assert data[const.ATTR_ALARM_SOUNDS] == ["Harp.mp3"]
     assert data[const.ATTR_WEATHER_WAKE_UP_TIME] == "16:05"
-    assert data[f"{const.ATTR_SMART_BUTTON_COLOR}_1"] == [1, 1, 1]
+    assert data[f"{const.ATTR_SMART_BUTTON_COLOR}_1"] == clock.Color(1, 1, 1)
 
 
 @pytest.mark.asyncio

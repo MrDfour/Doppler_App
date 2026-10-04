@@ -1,1 +1,6 @@
 pytest-homeassistant-custom-component
+
+# Still imported by the integration: services.py uses doppyler's typed models and
+# __init__.py still hands DopplerServices a DopplerClient. Removing it is the remaining
+# phase of the migration. Tests that import the integration cannot run without it.
+doppyler==0.0.20
