@@ -588,19 +588,35 @@ class DopplerRepository(
         else -> OverrideVerdict.UNKNOWN
     }
 
+    /**
+     * Create an alarm, or replace an existing one.
+     *
+     * **Replacing an alarm is a delete followed by a create, because `PUT /alarms/{id}`
+     * does not work on this firmware.** Measured on Doppler-10caaebb: `PUT /alarms/{id}`
+     * returns `404 "alarm not found"` for every alarm, including a *byte-identical no-op*
+     * write against a real alarm, and including one currently ringing. `DELETE
+     * /alarms/{id}` on the same path shape returns 200 and does delete it, so the id lookup
+     * works and only the update handler is broken.
+     *
+     * `POST /alarms` is create-only and the clock assigns its own id, so the replacement
+     * lands under a **new id**. That is unavoidable rather than a shortcut.
+     *
+     * Order is delete-then-create deliberately. Creating first and deleting after risks
+     * leaving a silent duplicate if the delete fails - the exact failure this project has
+     * already shipped once. The cost of this order is that a create failure leaves the
+     * alarm removed; that surfaces as a thrown error and the following [refresh] reconciles
+     * the UI, so it is visible rather than silent.
+     */
     suspend fun addOrUpdateAlarm(alarm: DopplerAlarm) {
         val previousState = _deviceState.value
         // Ensure clockAlarmIds is populated with current clock alarm IDs before the
-        // create-vs-update routing decision. A stale clockAlarmIds (from a previous
-        // refresh that happened before the UI action) caused every alarm operation to
-        // route through POST (create) instead of PUT (update), silently creating
-        // duplicate alarms - the regression fixed by c9e62e8. Only refresh if the set is
-        // empty, to avoid unnecessary latency when a recent refresh already provides
-        // fresh data.
+        // create-vs-replace routing decision. A stale clockAlarmIds (from a previous
+        // refresh that happened before the UI action) caused every alarm operation to be
+        // treated as a create, which silently duplicated alarms. Only refresh if the set is
+        // empty, to avoid unnecessary latency when a recent refresh already provides fresh
+        // data.
         if (clockAlarmIds.isEmpty()) refresh()
-        // Decide create-vs-update from the ids the clock has confirmed, not from the id we
-        // picked. POST /alarms is create-only on real hardware, so posting an edit creates
-        // a second alarm instead of changing the first.
+        val isReplacement = alarm.id in clockAlarmIds
         applyOptimisticUpdate { current ->
             if (current == null) null
             else {
@@ -609,11 +625,11 @@ class DopplerRepository(
             }
         }
         try {
-            if (alarm.id in clockAlarmIds) {
-                localApi.updateAlarm(alarm)
-                // Hold on to this copy until the clock's own list confirms it. See
-                // mergePendingAlarms for why the read-back cannot be trusted immediately.
-                pendingAlarmWrites[alarm.id] = PendingAlarm(alarm, System.currentTimeMillis())
+            if (isReplacement) {
+                localApi.deleteAlarm(alarm.id)
+                // Not a pending update: the replacement is a brand new alarm as far as the
+                // clock is concerned, so it must be adopted under the id it issues.
+                createAlarmAndAdopt(alarm)
             } else {
                 // A create gets an id of the clock's choosing, not ours. The optimistic entry
                 // we just showed carries our invented id, which will never match anything the

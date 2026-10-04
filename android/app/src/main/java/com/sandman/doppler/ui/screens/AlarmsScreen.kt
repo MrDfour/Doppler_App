@@ -40,7 +40,9 @@ private data class AlarmDraft(
     val volume: Int = 80,
     val colorPreset: DopplerColor = DopplerColor.CYAN,
     // Real hardware status values, not 1/0. See DopplerAlarm.STATUS_*.
-    val status: Int = DopplerAlarm.STATUS_ACTIVE
+    // Defaults to ARMED, not UNARMED: this is the status a newly added alarm is created with,
+    // and an alarm created unarmed never rings.
+    val status: Int = DopplerAlarm.STATUS_ARMED
 )
 
 private val DAYS_OF_WEEK = listOf("Su", "Mo", "Tu", "We", "Th", "Fr", "Sa")
@@ -607,9 +609,17 @@ private fun AlarmEditDialog(
                     ) {
                         Text(stringResource(R.string.enable_alarm), color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Switch(
-                            checked = status != DopplerAlarm.STATUS_DISABLED,
+                            checked = status != DopplerAlarm.STATUS_UNARMED &&
+                                status != DopplerAlarm.STATUS_DISABLED,
                             onCheckedChange = {
-                                status = if (it) DopplerAlarm.STATUS_ACTIVE else DopplerAlarm.STATUS_DISABLED
+                                // Arm with 1 and disarm with 10, the two values proven on
+                                // hardware. Writing 10 to switch an alarm ON produced an alarm
+                                // that showed as enabled in the app and never rang.
+                                status = if (it) {
+                                    DopplerAlarm.STATUS_ARMED
+                                } else {
+                                    DopplerAlarm.STATUS_UNARMED
+                                }
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Slate950,

@@ -457,8 +457,10 @@ open class DopplerLocalApi(
      * POSTing `id: 200` produced `id: 4`, and POSTing `id: 4` produced a *new* `id: 5`
      * rather than modifying 4.
      *
-     * The response body is the entire alarm list, with the new alarm inserted first.
-     * Callers must reconcile against the clock's own id; see `DopplerRepository.addOrUpdateAlarm`.
+     * The response body is the entire alarm list. The new alarm is **not** inserted first:
+     * an observed response came back as `[id 2, id 3 (new), id 1, id 0]`, and the list is not
+     * sorted by id. Callers must reconcile against the clock's own id, never by list
+     * position; see `DopplerRepository.addOrUpdateAlarm`.
      */
     open suspend fun createAlarm(alarm: DopplerAlarm): String {
         val body = json.encodeToString(alarm)
@@ -466,11 +468,29 @@ open class DopplerLocalApi(
     }
 
     /**
-     * Update an existing alarm in place. `PUT /alarms/{id}` is the only mutating call that
-     * targets an existing alarm - verified live: it changed volume 100 -> 7 on alarm 4 with
-     * no new alarm created. `PUT /alarms` without an id is 404.
+     * `PUT /alarms/{id}` — **BROKEN ON THIS FIRMWARE. DO NOT CALL.**
      *
-     * Using `POST /alarms` for an edit does not update the alarm; it creates a duplicate.
+     * Measured against Doppler-10caaebb (firmware 1214): every call returns
+     * `404 {"error":"NOT_FOUND","message":"alarm not found"}`. Verified against
+     *   - a complete, well-formed body,
+     *   - a **byte-identical no-op** re-send of an existing alarm's own values, and
+     *   - an alarm that was actively ringing (`status: 4`) at the time.
+     * A partial body produces `500` (an oatpp null-pointer) instead.
+     *
+     * `PUT /alarms` with no id gives `404 "No mapping for HTTP-method: 'PUT'"`, so there is
+     * no other update route either.
+     *
+     * `DELETE /alarms/{id}` has the same path shape and returns 200, deleting the alarm. So
+     * **the id lookup works and only the update handler is broken** — this is not a routing
+     * problem and not a bad payload.
+     *
+     * An earlier version of this file claimed this call worked, citing an observed
+     * `PUT /alarms/4 {"volume":7}` that changed volume 100 -> 7. That observation does not
+     * reproduce and has been treated as a mistake in the app's model of the clock.
+     *
+     * Replacing an alarm is therefore **delete-then-create**, which changes the alarm's id.
+     * See `DopplerRepository.addOrUpdateAlarm`. This method is retained only so tests can
+     * assert that no write path reaches it.
      */
     open suspend fun updateAlarm(alarm: DopplerAlarm): String {
         val body = json.encodeToString(alarm)

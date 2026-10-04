@@ -251,23 +251,26 @@ data class DopplerAlarm(
     val repeat: String = "", // e.g. "MoTuWeThFr"
     val color: DopplerColorObject? = null,
     val volume: Int = 80,
-    val status: Int = STATUS_ACTIVE, // see STATUS_* below
+    val status: Int = STATUS_ARMED, // see STATUS_* below
     val sound: String = "Gentle.mp3",
     val src: Int = 1 // 1 = user, 0 = system
 ) {
     /**
-     * Live hardware reports `status: 10` on every active alarm - verified against a real
-     * clock, where the system alarm and both user alarms all came back as 10. This app
-     * previously assumed `1 = enabled`, which made `isEnabled` false for every alarm the
-     * device actually had, so they all rendered dimmed with the toggle showing off.
+     * Whether this alarm is switched on, i.e. armed and able to ring.
      *
-     * `0` is stored verbatim by the clock when sent (verified), so 0 remains "disabled".
-     * `1` is still accepted because this app wrote it before the real value was known, and
-     * rejecting it would make previously-written alarms look disabled. Any other value is
-     * treated as active: an alarm is only shown as off when the clock positively says 0,
-     * because wrongly dimming a real alarm is worse than wrongly lighting up a stale one.
+     * Measured on real hardware by arming alarms and listening to them: `status: 1` lit the
+     * "alarm armed" LED and rang; `status: 10` did neither. `doppyler`'s own status table
+     * agrees - `1 = set` ("turned on and ready to go off"), `10 = unarmed`.
+     *
+     * Anything in `1..9` counts as on, because that band covers armed, ready, activating,
+     * active, snoozing, snoozed, stopping, stopped and completed - all states of an alarm
+     * the user has switched on. `0` (unset) and [STATUS_UNARMED] are off.
+     *
+     * This corrects an earlier reading which had `10` as the *active* value. That was wrong,
+     * and it is why an alarm switched on in the app never rang: the toggle wrote `10`.
      */
-    val isEnabled: Boolean get() = status != STATUS_DISABLED
+    val isEnabled: Boolean
+        get() = status in STATUS_ARMED_RANGE_START..STATUS_ARMED_RANGE_END
     val isSystemAlarm: Boolean get() = id == 0
     val timeFormatted: String get() = String.format("%02d:%02d", time_hr, time_min)
 
@@ -284,14 +287,31 @@ data class DopplerAlarm(
         }
 
     companion object {
-        /** What live hardware reports for an active alarm. Verified on a real unit. */
-        const val STATUS_ACTIVE = 10
+        /**
+         * Armed - the alarm is scheduled and **will ring**.
+         *
+         * Proven on hardware: an alarm created with `status: 1` lit the "alarm armed" LED
+         * and rang at the set minute. One created with [STATUS_UNARMED] did neither.
+         */
+        const val STATUS_ARMED = 1
 
-        /** Stored verbatim by the clock when sent; the only value that means "off". */
+        /**
+         * Unarmed - present on the clock but **will not ring**, and the armed LED stays off.
+         *
+         * Every alarm on the probed unit reported this. The app previously treated it as
+         * "active" and so displayed disarmed alarms as enabled, and wrote this value when the
+         * user switched an alarm on - which is why an alarm toggled on in the app never rang.
+         */
+        const val STATUS_UNARMED = 10
+
+        /** Unset. The clock stores this verbatim when sent. */
         const val STATUS_DISABLED = 0
 
-        /** Legacy value this app wrote before the real status was known. Still honoured. */
-        const val STATUS_LEGACY_ENABLED = 1
+        /** Lowest value that means the alarm is armed or in a live state. */
+        const val STATUS_ARMED_RANGE_START = 1
+
+        /** Highest value that means the alarm is armed or in a live state. */
+        const val STATUS_ARMED_RANGE_END = 9
     }
 }
 

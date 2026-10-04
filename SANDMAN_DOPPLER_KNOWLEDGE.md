@@ -366,6 +366,103 @@ were in play there:
 app's endpoint list entirely**. Treat all three "override" endpoints as invented, not as
 unimplemented firmware. See open issue 11.
 
+## Alarms on Firmware 1214 — measured end to end (Oct 2026, supersedes earlier claims)
+
+Every statement here was measured against `Doppler-10caaebb` by arming real alarms and
+listening to them. **Several earlier claims in this document are wrong and are corrected
+below.** The clock has a **physical LED that lights when an alarm is armed** — the owner's
+observation of that LED is what cracked the status semantics.
+
+### `status: 1` is ARMED. `status: 10` is DISARMED
+
+This is the opposite of what this document previously asserted. Proof:
+
+| Created with | LED lit? | Rang? |
+| :--- | :--- | :--- |
+| `status: 10` | **no** | **no** |
+| `status: 1` | **yes** | **yes**, at the set minute |
+
+`doppyler`'s own table agrees and was right all along:
+
+```
+1 = "set"      <- "the status where the alarm is turned on and ready to go off"
+10 = "unarmed"
+```
+
+**Every alarm on this clock reports `10` — so all of them are disarmed.** The owner's real
+alarms (08:51 and 20:52) are disarmed and will not ring. An alarm only works if it is
+created with `status: 1`.
+
+The Android app's `isEnabled = status == 1` is therefore **correct**, but it was derived
+from a wrong justification, and the display bug the doc described ("every alarm rendered
+dimmed") does not occur.
+
+### Observed status lifecycle
+
+```
+1 (armed) -> 3 (activating) -> 4 (active, ringing) -> 6 (snoozed)
+```
+
+The clock advances these itself. `status: 4` is the "it is ringing right now" state and is
+observable over `GET /alarms`, which makes automated snooze testing possible.
+
+### Alarm writes are ASYMMETRIC — this is the bug
+
+| Operation | Route | Result |
+| :--- | :--- | :--- |
+| Create | `POST /alarms` | **200**, clock assigns the id |
+| Update | `PUT /alarms/{id}` | **404 `"alarm not found"`** |
+| Delete | `DELETE /alarms/{id}` | **200**, works |
+
+`DELETE` and `PUT` take the same path shape and `DELETE` finds the alarm, so **the id lookup
+works and only the update handler is broken.** A byte-identical **no-op** `PUT` against the
+owner's real 20:52 alarm was also rejected as "alarm not found", so this is not a bad
+payload. Partial bodies give 500 (oatpp null-pointer) and complete bodies give 404.
+
+> **Earlier claim now disproved:** this document previously recorded `PUT /alarms/4
+> {"volume":7}` as "updated alarm 4 in place". That does not reproduce. Alarm editing has
+> never worked on this firmware.
+
+**Consequence:** the Android app routes every edit through `PUT /alarms/{id}`, so **alarm
+editing in the app cannot work** regardless of any other fix. The only working writes are
+create and delete, so an "edit" must be modelled as **delete-then-create** — which changes
+the alarm's id.
+
+### Snooze / stop from the app: does not exist on this firmware
+
+Seven candidates were POSTed at the exact moment an alarm was ringing (`status: 4`):
+
+```
+POST alarms/snooze     POST alarms/{id}/snooze   POST alarms/stop
+POST alarms/{id}/stop  POST alarms/silence        POST alarms/snooze {id}
+POST alarms/{id}/snooze {id}
+```
+
+All seven returned **404 `"No mapping for HTTP-method: 'POST'"`**. Unlike a 404 from a GET
+probe, this is conclusive: oatpp names the method it could not map, so these routes are not
+registered for POST at all. The alarm remained at `status: 4` throughout.
+
+Writing the status directly does not work either — `PUT /alarms/{id}` with
+`status` of 5/6/7/8 all returned `"alarm not found"` on a **currently ringing** alarm.
+
+> **Snooze is a physical-button action on this hardware.** `STOP_SNOOZE_ALARM` is gated at
+> firmware 1231 and this clock is 1214, which is consistent: the app-side feature is absent
+> because the firmware predates it.
+
+### Other corrections
+
+- **`POST /alarms` does not insert the new alarm first.** Observed response order was
+  `[id 2, id 3 (new), id 1, id 0]` — the new alarm came **second**. Do not identify a created
+  alarm by list position; match on the returned id or payload.
+- The clock answers `POST /alarms` with the full list, and that list is unsorted by id.
+
+### What does work, verified
+
+- Creating an armed alarm with `{"name":…,"time_hr":…,"time_min":…,"repeat":"",
+  "color":{r,g,b},"volume":100,"status":1,"src":1,"sound":"Alarming.mp3"}`.
+- It rings at the set minute, at full volume, audibly, with the LED lit.
+- `DELETE /alarms/{id}` removes it cleanly.
+
 ## What Each Gated Feature Actually Does
 
 The enum names are app-internal and do not obviously correspond to clock behaviour. Mapped to the

@@ -14,26 +14,37 @@ import org.junit.Test
 /**
  * The alarm write protocol, as the real hardware actually behaves.
  *
- * Every assertion here is anchored to something observed on a live clock (DSN
- * Doppler-10caaebb, Enter Sandman, firmware Escapement), not to the app's assumptions:
+ * Every assertion here is anchored to something measured on a live clock (DSN
+ * Doppler-10caaebb, Enter Sandman, firmware Escapement / 0.1214), by arming real alarms and
+ * listening to them:
  *
- *  - `POST /alarms` is **create-only**. POSTing `{"id":200, ...}` came back as `id: 4`.
- *    POSTing `{"id":4, ...}` to change it produced a *new* `id: 5` and left 4 untouched.
- *  - `PUT /alarms/{id}` is the update. `PUT /alarms` with no id is 404.
- *  - `POST /alarms` responds with the **entire** alarm list, new alarm first, unsorted.
- *  - Active alarms report `status: 10`. The app modelled only `1`/`0`.
+ *  - `status: 1` is **armed**. The clock lit its "alarm armed" LED and rang.
+ *  - `status: 10` is **unarmed**. No LED, no ring. Every alarm on the unit reported 10.
+ *  - Observed lifecycle: `1` armed -> `3` activating -> `4` active (ringing) -> `6` snoozed.
+ *  - `POST /alarms` is **create-only** and the clock assigns its own id.
+ *  - `PUT /alarms/{id}` **does not work**: `404 "alarm not found"` for every alarm, including
+ *    a byte-identical no-op write and including one that was ringing at the time.
+ *  - `DELETE /alarms/{id}` **does** work. Same path shape as the failing PUT, so the id lookup
+ *    is fine and only the update handler is broken.
  *
- * [FaithfulClockApi] reproduces the create-only quirk, because a mock that treats POST as
- * an upsert cannot catch an app that wrongly depends on it.
+ * So replacing an alarm is a delete followed by a create, and the replacement lands under a
+ * new id. That is what [FaithfulClockApi] models, and it refuses to emulate a working PUT -
+ * a mock that silently succeeds at updates cannot catch an app that depends on one.
  */
 class AlarmWriteProtocolTest {
 
-    /** Models the clock exactly as observed: POST always creates with a fresh id. */
+    /**
+     * Models the clock exactly as observed.
+     *
+     * [updateAlarm] deliberately returns the hardware's real answer. Any test that reaches it
+     * is asserting against a route the clock does not implement.
+     */
     private class FaithfulClockApi(
         initial: List<DopplerAlarm> = emptyList()
     ) : MockPollApi() {
         val clockAlarms = initial.toMutableList()
         val posts = mutableListOf<DopplerAlarm>()
+        val deletes = mutableListOf<Int>()
         val puts = mutableListOf<Int>()
         var nextAssignedId = (clockAlarms.maxOfOrNull { it.id } ?: 0) + 1
 
@@ -49,42 +60,45 @@ class AlarmWriteProtocolTest {
             return json.encodeToString(DopplerAlarmsResponse(clockAlarms.toList()))
         }
 
+        /** The clock rejects this with 404 "alarm not found". Recorded so tests can prove it. */
         override suspend fun updateAlarm(alarm: DopplerAlarm): String {
             puts += alarm.id
-            val idx = clockAlarms.indexOfFirst { it.id == alarm.id }
-            if (idx >= 0) clockAlarms[idx] = alarm
-            return ""
+            throw IllegalStateException("PUT /alarms/${alarm.id} -> 404 alarm not found")
         }
 
         override suspend fun deleteAlarm(alarmId: Int): String {
+            deletes += alarmId
             clockAlarms.removeAll { it.id == alarmId }
             return ""
         }
     }
 
-    private fun alarm(id: Int, hour: Int = 7) = DopplerAlarm(id = id, name = "A$id", time_hr = hour)
+    private fun alarm(id: Int, hour: Int = 7, status: Int = DopplerAlarm.STATUS_ARMED) =
+        DopplerAlarm(id = id, name = "A$id", time_hr = hour, status = status)
 
     /**
-     * The core regression. Editing an existing alarm used to POST, which the clock treats as
-     * a create - so every edit left a duplicate behind. This is why the probed clock held two
-     * byte-identical alarms, ids 2 and 3, both at 13:15.
+     * An edit must delete then create, never PUT.
+     *
+     * The old expectation here was "an edit must PUT exactly the edited alarm", which is
+     * precisely the thing the hardware does not support. The duplicate-alarm regression that
+     * test guarded against is still guarded - by asserting the count instead.
      */
     @Test
-    fun `editing an existing alarm updates it instead of creating a duplicate`(): Unit = runTest {
+    fun `editing an existing alarm replaces it without leaving a duplicate`(): Unit = runTest {
         val api = FaithfulClockApi(listOf(alarm(id = 2)))
         val repository = DopplerRepository(api)
         repository.refresh()
 
         repository.addOrUpdateAlarm(alarm(id = 2, hour = 9))
 
-        assertTrue("an edit must never POST", api.posts.isEmpty())
-        assertEquals("an edit must PUT exactly the edited alarm", listOf(2), api.puts)
-        assertEquals("no duplicate may be created", 1, api.clockAlarms.size)
+        assertEquals("an edit must delete the old alarm", listOf(2), api.deletes)
+        assertEquals("an edit must never PUT", emptyList<Int>(), api.puts)
+        assertEquals("no duplicate may be left behind", 1, api.clockAlarms.size)
         assertEquals(9, api.clockAlarms.single().time_hr)
     }
 
     @Test
-    fun `a brand new alarm is created rather than updated`(): Unit = runTest {
+    fun `a brand new alarm is created rather than replaced`(): Unit = runTest {
         val api = FaithfulClockApi(listOf(alarm(id = 2)))
         val repository = DopplerRepository(api)
         repository.refresh()
@@ -92,13 +106,13 @@ class AlarmWriteProtocolTest {
         repository.addOrUpdateAlarm(alarm(id = 1, hour = 6))
 
         assertTrue("a new alarm must POST", api.posts.isNotEmpty())
-        assertTrue("a new alarm must not PUT a nonexistent id", api.puts.isEmpty())
+        assertTrue("a new alarm must not delete anything", api.deletes.isEmpty())
+        assertEquals("a new alarm must not PUT", emptyList<Int>(), api.puts)
     }
 
     /**
-     * The clock assigns its own id, so the app must adopt it. Otherwise the entry the user
-     * just created is shown under an id the device never issued, and one poll later it is
-     * replaced by a differently-numbered alarm - the alarm appears to vanish and reappear.
+     * The clock assigns its own id, so the app must adopt it - including after a replacement,
+     * where the id necessarily changes.
      */
     @Test
     fun `the id the clock assigns is adopted rather than the invented one`(): Unit = runTest {
@@ -108,7 +122,7 @@ class AlarmWriteProtocolTest {
 
         repository.addOrUpdateAlarm(alarm(id = 1, hour = 6))
 
-        val assigned = api.posts.single().let { api.clockAlarms.first { it.time_hr == 6 }.id }
+        val assigned = api.clockAlarms.first { it.time_hr == 6 }.id
         assertEquals("the clock issues ids sequentially, ignoring ours", 3, assigned)
 
         // Nothing may be left behind under the id we invented.
@@ -120,6 +134,25 @@ class AlarmWriteProtocolTest {
             "the clock's id must be what the app shows",
             repository.deviceState.value!!.alarms.any { it.id == assigned }
         )
+    }
+
+    /**
+     * A replacement gets a new id. The app must show the alarm under the id the clock issued,
+     * never the old one, or the alarm appears to vanish and reappear under a different
+     * number - the identity bug this adoption logic exists to prevent.
+     */
+    @Test
+    fun `a replaced alarm is shown under its new id not the old one`(): Unit = runTest {
+        val api = FaithfulClockApi(listOf(alarm(id = 2, hour = 7)))
+        val repository = DopplerRepository(api)
+        repository.refresh()
+
+        repository.addOrUpdateAlarm(alarm(id = 2, hour = 9))
+
+        val state = repository.deviceState.value!!.alarms
+        assertEquals("the old id must be gone from app state", 0, state.count { it.id == 2 })
+        assertEquals("the alarm must appear exactly once", 1, state.count { it.time_hr == 9 })
+        assertEquals("and under the id the clock issued", 3, state.single { it.time_hr == 9 }.id)
     }
 
     /**
@@ -145,17 +178,35 @@ class AlarmWriteProtocolTest {
         )
     }
 
-    /** Real hardware reports 10 for active. Modelled as 1, every alarm looked switched off. */
+    // ---------------------------------------------------------------------------------
+    // Status semantics, measured by arming alarms and listening to them.
+    //
+    // These previously asserted that 10 was the *enabled* value. That was wrong: an alarm
+    // created with 10 never rang and never lit the armed LED, while one created with 1 did
+    // both. The consequence in the app was severe - the toggle wrote 10 to switch an alarm
+    // ON, so alarms switched on in the app never rang.
+    // ---------------------------------------------------------------------------------
+
     @Test
-    fun `status 10 from real hardware reads as enabled`() {
-        assertTrue(DopplerAlarm(id = 2, status = 10).isEnabled)
-        assertTrue(DopplerAlarm(id = 2, status = 1).isEnabled)
-        assertFalse(DopplerAlarm(id = 2, status = 0).isEnabled)
+    fun `status 1 is armed and 10 is unarmed`() {
+        assertTrue("1 is armed", DopplerAlarm(id = 2, status = 1).isEnabled)
+        assertFalse("10 is unarmed", DopplerAlarm(id = 2, status = 10).isEnabled)
+        assertFalse("0 is unset", DopplerAlarm(id = 2, status = 0).isEnabled)
     }
 
     @Test
-    fun `an alarm parsed from a real payload is enabled`() {
-        // Verbatim from GET /alarms on the live clock.
+    fun `every live state in the ringing lifecycle counts as enabled`() {
+        // 3 activating, 4 active, 5 snoozing, 6 snoozed - all states of an alarm the user
+        // has switched on. Treating any of them as off would dim a real, working alarm.
+        listOf(1, 2, 3, 4, 5, 6, 7, 8, 9).forEach { status ->
+            assertTrue("status $status is a live state", DopplerAlarm(id = 2, status = status).isEnabled)
+        }
+    }
+
+    @Test
+    fun `an alarm parsed from a real payload reads as disabled`() {
+        // Verbatim from GET /alarms on the live clock. The clock reported 10 for every alarm,
+        // so the app was showing real, silent, disarmed alarms as enabled.
         val raw = """{"id":2,"name":"","time_hr":13,"time_min":15,"repeat":"",""" +
             """"color":{"red":0,"green":220,"blue":255},"volume":100,"status":10,""" +
             """"src":1,"sound":"Harp.mp3","next_trigger":-1}"""
@@ -163,8 +214,16 @@ class AlarmWriteProtocolTest {
             .decodeFromString<DopplerAlarm>(raw)
 
         assertEquals(10, parsed.status)
-        assertTrue("a real alarm must not render as disabled", parsed.isEnabled)
+        assertFalse("a disarmed real alarm must not render as enabled", parsed.isEnabled)
         assertEquals("13:15", parsed.timeFormatted)
         assertFalse(parsed.isSystemAlarm)
+    }
+
+    @Test
+    fun `a new alarm defaults to armed so it will actually ring`() {
+        // The default is what an alarm the user just added is created with. It must be the
+        // value that rings.
+        assertEquals(DopplerAlarm.STATUS_ARMED, DopplerAlarm(id = 9).status)
+        assertTrue(DopplerAlarm(id = 9).isEnabled)
     }
 }
