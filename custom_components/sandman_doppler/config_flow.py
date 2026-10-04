@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from doppyler.client import DopplerClient
-from doppyler.exceptions import DopplerException
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -13,6 +11,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
+from .discovery import async_validate_credentials
 
 
 class DopplerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -57,9 +56,4 @@ class DopplerFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     async def _credentials_valid(self, email: str, password: str) -> bool:
         """Return true if credentials are valid."""
         session = async_get_clientsession(self.hass)
-        client = DopplerClient(email, password, client_session=session)
-        try:
-            await client.get_token()
-        except DopplerException:
-            return False
-        return True
+        return await async_validate_credentials(email, password, session)

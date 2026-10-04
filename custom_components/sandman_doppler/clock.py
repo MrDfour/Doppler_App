@@ -382,12 +382,28 @@ class CloudDoppler:
         if color is not None:
             config["color"] = list(color)
         try:
-            return await self._transport.async_write(
+            response = await self._transport.async_write(
                 "PUT", f"hardware/button{button_num}", config
             )
         except (DopplerConnectionError, EndpointUnavailableError) as err:
             _LOGGER.debug("Smart button %s write failed: %s", button_num, err)
             return {}
+
+        # Verify. The 200 and its echoed body are not evidence: on this firmware the
+        # response repeats exactly what was submitted while storage is untouched, so a
+        # caller checking only the response would believe it succeeded.
+        stored = await self.get_smart_button_configuration(button_num)
+        if stored.get("url") != config.get("url"):
+            _LOGGER.warning(
+                "Smart button %s on %s accepted the configuration but did not store it "
+                "(requested url=%r, stored url=%r). This clock's firmware does not "
+                "support smart button webhooks; the buttons will not fire.",
+                button_num,
+                self.dsn,
+                config.get("url"),
+                stored.get("url"),
+            )
+        return response
 
     # ----------------------------------------------------------------- writes
 
